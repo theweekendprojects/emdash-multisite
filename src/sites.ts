@@ -1,4 +1,5 @@
 import { isSiteId } from "./rewrite.ts";
+import type { Limits } from "./rules.ts";
 
 /** Serializable (lives in the build-time database descriptor). */
 export interface SitesConfig {
@@ -8,10 +9,15 @@ export interface SitesConfig {
 	hosts?: Record<string, string>;
 	/** Base domain: `acme.example.com` -> site `acme`. */
 	wildcard?: string;
+	/** Caps on site creation. Defaults to 3 sites per user, no platform cap. */
+	limits?: Limits;
 }
 
 export function assertSitesConfig(c: SitesConfig): void {
 	if (!isSiteId(c.primary)) throw new Error(`[multisite] invalid primary site id: ${c.primary}`);
+	for (const [k, v] of Object.entries(c.limits ?? {})) {
+		if (v !== undefined && (!Number.isInteger(v) || v < 0)) throw new Error(`[multisite] limits.${k} must be a non-negative integer`);
+	}
 	for (const [host, id] of Object.entries(c.hosts ?? {})) {
 		if (!isSiteId(id)) throw new Error(`[multisite] invalid site id for ${host}: ${id}`);
 	}

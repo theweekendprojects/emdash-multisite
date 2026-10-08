@@ -8,44 +8,20 @@
  *
  * The org slug is the site id and therefore the subdomain: `acme` -> acme.<domain>.
  */
-import { Kysely, sql } from "kysely";
+import { sql } from "kysely";
 import { applySeed } from "emdash";
 // @ts-ignore - virtual module provided by EmDash's integration (the bundled seed)
 import { userSeed } from "virtual:emdash/seed";
-import { siteDialect, runAsSite } from "./dialect.ts";
+import { runAsSite } from "./dialect.ts";
 import { isSiteId } from "./rewrite.ts";
+import { STALE_PROVISIONING_MS, needsReconcile, type SiteStatus } from "./rules.ts";
+import { controlDb, readOrgs, siteHasTables } from "./registry.ts";
 import { scopeState } from "./scope.ts";
 import { provisionWith } from "./provision.ts";
 
-/** Subdomain labels that must never become customer sites. */
-export const RESERVED_SITE_IDS: ReadonlySet<string> = new Set([
-	"www", "app", "api", "admin", "auth", "login", "mail", "smtp", "ftp", "cdn", "static",
-	"assets", "dashboard", "console", "status", "docs", "help", "support", "billing", "internal",
-]);
-
-/** `null` when the slug can be a site id, otherwise a human-readable reason. */
-export function slugProblem(slug: unknown, primary: string): string | null {
-	if (typeof slug !== "string" || slug.length === 0) return "Choose a name for your site address.";
-	if (!isSiteId(slug)) {
-		return "Use 1-40 lowercase letters, digits or hyphens, starting and ending with a letter or digit.";
-	}
-	if (slug === primary || RESERVED_SITE_IDS.has(slug)) return `"${slug}" is reserved. Choose another address.`;
-	return null;
-}
-
-export type SiteStatus =
-	| { status: "provisioning"; startedAt: string }
-	| { status: "ready"; startedAt: string; readyAt: string }
-	| { status: "failed"; startedAt: string; error: string };
+export { ORG_CREATE_PATH, RESERVED_SITE_IDS, parseCreatedOrg, slugProblem, type SiteStatus } from "./rules.ts";
 
 const statusKey = (slug: string) => `multisite:site:${slug}`;
-
-/** Control-plane connection: the shared inner driver, site resolved per query. */
-function controlDb(): Kysely<never> {
-	const st = scopeState();
-	if (!st.inner) throw new Error("[multisite] database not initialised yet");
-	return new Kysely<never>({ dialect: siteDialect(st.inner, st.activeSite, st.primary) });
-}
 
 export async function readStatus(slug: string): Promise<SiteStatus | null> {
 	const db = controlDb();
@@ -56,7 +32,7 @@ export async function readStatus(slug: string): Promise<SiteStatus | null> {
 	return v ? (JSON.parse(v) as SiteStatus) : null;
 }
 
-async function writeStatus(slug: string, s: SiteStatus): Promise<void> {
+export async function writeStatus(slug: string, s: SiteStatus): Promise<void> {
 	const db = controlDb();
 	await runAsSite(scopeState().primary, () =>
 		sql`INSERT INTO options (name, value) VALUES (${statusKey(slug)}, ${JSON.stringify(s)})
@@ -64,16 +40,19 @@ async function writeStatus(slug: string, s: SiteStatus): Promise<void> {
 	);
 }
 
-interface CreatedOrg {
-	id?: string;
-	slug?: string;
-	name?: string;
-	members?: Array<{ userId?: string; role?: string }>;
-}
-
 const BA_SETTINGS = "plugin:better-auth-settings:settings:";
 /** Settings not inherited by customer sites: they decide for themselves. */
 const NOT_INHERITED = new Set([`${BA_SETTINGS}orgEnabled`, `${BA_SETTINGS}teamsEnabled`]);
+
+/** Free core's migration lock if it has been held longer than a provisioning run can last. */
+async function releaseStaleLock(db: ReturnType<typeof controlDb>, slug: string): Promise<void> {
+	const cutoff = Date.now() - STALE_PROVISIONING_MS;
+	await runAsSite(slug, () =>
+		sql`UPDATE _emdash_migrations_lock SET is_locked = 0 WHERE is_locked > 0 AND is_locked < ${cutoff}`
+			.execute(db)
+			.catch(() => {}), // first run: the table does not exist yet
+	);
+}
 
 /**
  * Create the site `slug` and hand it to `ownerUserId`. Idempotent: running it
@@ -85,6 +64,11 @@ export async function createSiteForOrg(org: { slug: string; name: string; ownerU
 	await writeStatus(org.slug, { status: "provisioning", startedAt });
 	try {
 		const db = controlDb();
+
+		// 0. a run that was killed mid-migration (Worker evicted) leaves core's
+		//    migration lock held, and every retry then refuses to start. Release a
+		//    lock old enough that its owner is certainly gone.
+		await releaseStaleLock(db, org.slug);
 
 		// 1. the site's tables (core migrations, run as the new site)
 		await provisionWith(db, org.slug);
@@ -146,12 +130,40 @@ export async function createSiteForOrg(org: { slug: string; name: string; ownerU
 	}
 }
 
-export const ORG_CREATE_PATH = "/api/auth/organization/create";
+/**
+ * Sites that need provisioning (again): `failed`, a `provisioning` row old
+ * enough to be a dead run, or no status row at all. A site with no status row
+ * but with tables predates status tracking; it is adopted as `ready` instead of
+ * being provisioned a second time on top of live content.
+ */
+export async function pendingReconcile(only?: string): Promise<string[]> {
+	const out: string[] = [];
+	for (const org of await readOrgs()) {
+		if (only && org.slug !== only) continue;
+		if (!org.ownerUserId || !isSiteId(org.slug)) continue;
+		const status = await readStatus(org.slug);
+		if (!needsReconcile(status, Date.now())) continue;
+		if (!status && (await siteHasTables(org.slug))) {
+			const now = new Date().toISOString();
+			await writeStatus(org.slug, { status: "ready", startedAt: now, readyAt: now });
+			continue;
+		}
+		out.push(org.slug);
+	}
+	return out;
+}
 
-/** Pull the fields provisioning needs out of Better Auth's create-org response. */
-export function parseCreatedOrg(body: unknown): { slug: string; name: string; ownerUserId: string } | null {
-	const o = body as CreatedOrg | null;
-	const owner = o?.members?.find((m) => m.role === "owner") ?? o?.members?.[0];
-	if (!o?.slug || !o.name || !owner?.userId) return null;
-	return { slug: o.slug, name: o.name, ownerUserId: owner.userId };
+/**
+ * Re-provision ONE stuck site (the first pending, or `only`). One per call on
+ * purpose: a run is ~20 s of D1 work and the background budget after a response
+ * (`waitUntil`) is ~30 s, so a loop would be killed half way and leave a site
+ * stuck in `provisioning`. Call again for the next one.
+ * ponytail: upgrade path is a Queue or Workflow that runs one site per message.
+ */
+export async function reconcile(only?: string): Promise<string[]> {
+	const [slug] = await pendingReconcile(only);
+	if (!slug) return [];
+	const org = (await readOrgs()).find((o) => o.slug === slug)!;
+	await createSiteForOrg({ slug, name: org.name, ownerUserId: org.ownerUserId! });
+	return [slug];
 }

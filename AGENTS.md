@@ -179,6 +179,20 @@ runtime, every query) reads it from ALS/the request db. There is no per-call sit
   collections but no entries. Seeding writes `site:title`; the org-name title
   write must stay after it.
 
+- **Cold isolate: call `warm()` before touching the control-plane DB from the outer
+  middleware.** The outer middleware runs before EmDash initialises its database, so on a
+  fresh isolate `scopeState().inner` is unset and the first request to a multisite route
+  500s ("database not initialised yet"). `registry.ts` `warm()` calls core's `getDb()`
+  (builds the dialect only). It looked fine in testing because isolates were warm.
+- **Background work after a response has ~30 s** (`waitUntil`). One provisioning run is
+  ~20 s, so reconcile does ONE site per call. A killed run leaves the migration lock
+  held; `releaseStaleLock` in `orgs.ts` frees locks older than 5 minutes.
+- **Never provision a site that already has tables and no status row.** Adopt it as
+  `ready` (see `pendingReconcile`). Re-running migrations plus seed on a live legacy site
+  failed with "Media usage capture trigger installation is incomplete".
+- **Pure rules live in `rules.ts`** (no virtual modules) so the self-checks run under plain
+  Node. Put new decision logic there, not in `orgs.ts` (which imports `virtual:emdash/seed`).
+
 ## How to verify a change (always do this)
 
 Run with Node ≥ 22.18:

@@ -123,6 +123,7 @@ That's the whole integration: install + three wires. No plugin entry, no EmDash 
 | `primary` | `string` (required) | The site that keeps **unprefixed** tables. Use for the control plane / your existing single site. |
 | `wildcard` | `string` | Base domain. `acme.<wildcard>` → site `acme`. |
 | `hosts` | `Record<hostname, siteId>` | Exact hostname → site id, for custom domains and for hosts with no wildcard (e.g. `*.workers.dev`). |
+| `limits` | `{ sitesPerUser?, totalSites? }` | Caps on site creation. Default `{ sitesPerUser: 3 }`; pass `{}` for no caps. See [Creating sites](#creating-sites-limits-and-recovery). |
 
 Supported inner adapters: `d1({...})` (Cloudflare) and `sqlite({...})` (local/Node dev). Site ids
 are DNS labels: `^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$`. Unknown hostnames resolve to `primary`.
@@ -248,6 +249,32 @@ Safe routine:
 4. Only then deploy. **Never auto-upgrade EmDash in production without a build.**
 
 The tripwire failing is the feature: it refuses to ship a cache that would leak across sites.
+
+## Creating sites, limits and recovery
+Creating a site = creating a Better Auth organization (`POST /api/auth/organization/create`); the
+slug is the site address. The middleware checks the request **before** Better Auth sees it:
+
+| Check | Result |
+|---|---|
+| slug is not a valid, unreserved DNS label | `400 INVALID_SITE_ADDRESS` |
+| signed-in user has an unverified email | `403 EMAIL_NOT_VERIFIED` |
+| user already owns `limits.sitesPerUser` sites (failed ones count) | `403 SITE_LIMIT_REACHED` |
+| platform already has `limits.totalSites` sites | `503 PLATFORM_FULL` |
+
+Anonymous callers fall through, so Better Auth answers 401 itself. Because every route to
+"create an organization" goes through this one path, the Better Auth organization UI is covered too.
+
+Provisioning runs in the background after the 200 and can die (Worker evicted). Recovery:
+- `POST /api/multisite/sites/<slug>/retry` — the site's owner or staff. `202` started, `409` if the
+  site does not need it.
+- `POST /api/multisite/reconcile` — staff only. Re-provisions the **next** stuck site (failed, or
+  `provisioning` for over 5 minutes) and reports the rest as `pending`. One site per call, because
+  the background budget after a response (~30 s) is shorter than two provisioning runs. Call again
+  for the next.
+
+A killed run leaves core's migration lock held; retries release a lock older than 5 minutes
+automatically. A site that has tables but no status row (created before status tracking) is
+adopted as `ready` instead of being provisioned a second time on top of live content.
 
 ## Operating a fleet
 
