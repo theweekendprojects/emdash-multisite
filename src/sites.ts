@@ -37,3 +37,14 @@ export function resolveSite(hostname: string, c: SitesConfig): string {
 	}
 	return c.primary;
 }
+
+/**
+ * Public address of a site, or `null` when no hostname is configured for it.
+ * An exact `hosts` entry wins (it is what the Worker actually routes), then the
+ * wildcard base domain.
+ */
+export function siteUrl(slug: string, c: SitesConfig): string | null {
+	const host = Object.entries(c.hosts ?? {}).find(([, id]) => id === slug)?.[0];
+	if (host) return `https://${host}`;
+	return c.wildcard ? `https://${slug}.${c.wildcard}` : null;
+}

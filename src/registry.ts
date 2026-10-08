@@ -8,6 +8,7 @@ import { Kysely, sql } from "kysely";
 import { getDb } from "emdash/runtime";
 import { siteDialect, runAsSite } from "./dialect.ts";
 import { scopeState } from "./scope.ts";
+import type { SiteStatus } from "./rules.ts";
 
 /**
  * Make sure the shared inner dialect exists. On a cold isolate our outer
@@ -31,6 +32,8 @@ export interface OrgRecord {
 	slug: string;
 	name: string;
 	ownerUserId: string | null;
+	/** Everyone in the org with their Better Auth role (owner, admin, member). */
+	members: Array<{ userId: string; role: string }>;
 	createdAt: string | null;
 	/** Better Auth `metadata` (a JSON string or object, depending on the writer). */
 	metadata: unknown;
@@ -51,9 +54,14 @@ export async function readOrgs(): Promise<OrgRecord[]> {
 		const orgs = await sql<{ data: string }>`SELECT data FROM _plugin_storage WHERE collection = 'organizations'`.execute(db);
 		const members = await sql<{ data: string }>`SELECT data FROM _plugin_storage WHERE collection = 'members'`.execute(db);
 		const ownerByOrg = new Map<string, string>();
+		const membersByOrg = new Map<string, Array<{ userId: string; role: string }>>();
 		for (const r of members.rows) {
 			const m = parse<{ organizationId?: string; userId?: string; role?: string }>(r.data);
-			if (m?.organizationId && m.userId && m.role === "owner") ownerByOrg.set(m.organizationId, m.userId);
+			if (!m?.organizationId || !m.userId) continue;
+			if (m.role === "owner") ownerByOrg.set(m.organizationId, m.userId);
+			const list = membersByOrg.get(m.organizationId) ?? [];
+			list.push({ userId: m.userId, role: m.role ?? "member" });
+			membersByOrg.set(m.organizationId, list);
 		}
 		const out: OrgRecord[] = [];
 		for (const r of orgs.rows) {
@@ -64,6 +72,7 @@ export async function readOrgs(): Promise<OrgRecord[]> {
 				slug: o.slug,
 				name: o.name ?? o.slug,
 				ownerUserId: ownerByOrg.get(o.id) ?? null,
+				members: membersByOrg.get(o.id) ?? [],
 				createdAt: o.createdAt ?? null,
 				metadata: o.metadata ?? null,
 			});
@@ -88,4 +97,18 @@ export async function siteHasTables(slug: string): Promise<boolean> {
 		sql<{ n: number }>`SELECT COUNT(*) AS n FROM sqlite_master WHERE type = 'table' AND name = ${`users$${slug}`}`.execute(db),
 	);
 	return Number(r.rows[0]?.n ?? 0) > 0;
+}
+
+/** Provisioning status of every site, keyed by slug. */
+export async function readAllStatuses(): Promise<Map<string, SiteStatus>> {
+	const db = controlDb();
+	const r = await runAsSite(scopeState().primary, () =>
+		sql<{ name: string; value: string }>`SELECT name, value FROM options WHERE name LIKE 'multisite:site:%'`.execute(db),
+	);
+	const out = new Map<string, SiteStatus>();
+	for (const row of r.rows) {
+		const v = parse<SiteStatus>(row.value);
+		if (v) out.set(row.name.slice("multisite:site:".length), v);
+	}
+	return out;
 }

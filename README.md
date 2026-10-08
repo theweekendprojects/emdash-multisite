@@ -250,6 +250,20 @@ Safe routine:
 
 The tripwire failing is the feature: it refuses to ship a cache that would leak across sites.
 
+## The customer console
+Two pages on the control-plane host, plain HTML served by the middleware (no host build step):
+
+| Page | What it does |
+|---|---|
+| `/sites` | The signed-in user's sites (any org they belong to) with status, Open site, Open admin, Retry. Shows the cap ("9 of 3 sites") and an unverified-email notice. Polls while a site is being set up. |
+| `/sites/new` | Wizard: name, address (auto-filled from the name, live availability check), Create, then a progress screen until the site is ready. |
+
+Anonymous visitors are sent to `/login?redirect=<page>`. Both pages use `GET /api/multisite/me`
+(sites, role, status, URL, cap, staff flag) and `GET /api/multisite/slug-check?slug=`, and create
+through Better Auth's `organization/create`, so the checks below apply to them too. A site's
+public URL comes from `hosts` (exact entry) or `wildcard`; with neither configured the card says
+no public address is set up.
+
 ## Creating sites, limits and recovery
 Creating a site = creating a Better Auth organization (`POST /api/auth/organization/create`); the
 slug is the site address. The middleware checks the request **before** Better Auth sees it:

@@ -1,5 +1,7 @@
 import { after } from "emdash";
 import { runAsSite } from "./dialect.ts";
+import { checkAddress, consoleState } from "./console.ts";
+import { consolePageHtml } from "./console-page.ts";
 import { isStaff, listSites } from "./fleet.ts";
 import { fleetPageHtml } from "./fleet-page.ts";
 import {
@@ -123,6 +125,24 @@ export async function onRequest(context: Ctx, next: Next): Promise<Response> {
 			if (!isSiteId(slug)) return json({ code: "NOT_FOUND" }, 404);
 			const status = await readStatus(slug);
 			return status ? json(status, 200) : json({ code: "NOT_FOUND" }, 404);
+		}
+
+		// Customer console. Pages need a session (shell only, no data); the JSON
+		// is separately gated by the same session.
+		if (method === "GET" && (pathname === "/sites" || pathname === "/sites/new")) {
+			if (!(await sessionUserId(context))) {
+				return Response.redirect(new URL(`/login?redirect=${encodeURIComponent(pathname)}`, context.url), 302);
+			}
+			return html(consolePageHtml(pathname === "/sites" ? "list" : "new"), 200);
+		}
+		if (method === "GET" && pathname === "/api/multisite/me") {
+			const userId = await sessionUserId(context);
+			if (!userId) return json({ code: "UNAUTHORIZED" }, 401);
+			return json(await consoleState(userId, sites), 200);
+		}
+		if (method === "GET" && pathname === "/api/multisite/slug-check") {
+			if (!(await sessionUserId(context))) return json({ code: "UNAUTHORIZED" }, 401);
+			return json(await checkAddress(context.url.searchParams.get("slug"), sites.primary), 200);
 		}
 
 		// Retry one site's provisioning: its owner or staff. Idempotent, 202 = started.
