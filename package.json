@@ -1,0 +1,39 @@
+{
+  "name": "emdash-multisite",
+  "version": "0.0.1",
+  "private": true,
+  "description": "PRIVATE. Single-DB multi-site for EmDash: per-site table prefix applied inside the Kysely dialect. Not for publishing.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./db/d1": "./src/db/d1.ts",
+    "./db/sqlite": "./src/db/sqlite.ts",
+    "./provision": "./src/provision.ts",
+    "./vite": "./src/vite.ts"
+  },
+  "scripts": {
+    "selfcheck": "node --no-warnings scripts/selfcheck.ts",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "peerDependencies": {
+    "emdash": ">=0.30.0",
+    "@emdash-cms/cloudflare": "*",
+    "kysely": ">=0.29.0"
+  },
+  "peerDependenciesMeta": {
+    "@emdash-cms/cloudflare": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "typescript": "5.9.3",
+    "kysely": "0.29.2"
+  },
+  "engines": {
+    "node": ">=22.18"
+  }
+}
