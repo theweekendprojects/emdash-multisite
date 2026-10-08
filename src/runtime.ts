@@ -1,6 +1,6 @@
 import { Kysely, type Dialect } from "kysely";
-import { currentSite, siteDialect } from "./dialect.ts";
-import { scopeState } from "./scope.ts";
+import { siteDialect } from "./dialect.ts";
+import { activeSite, scopeState } from "./scope.ts";
 import { resolveSite, type SitesConfig } from "./sites.ts";
 
 /** Config the wrapped descriptor hands to its runtime entrypoint. */
@@ -32,7 +32,9 @@ export function makeRuntime<InnerConfig>(createInner: (config: InnerConfig) => D
 		/** Singleton path: boot, migrations, cron. Site comes from `runAsSite`, else primary. */
 		createDialect(config: TenancyConfig<InnerConfig>): Dialect {
 			scopeState().primary = config.sites.primary;
-			return siteDialect(getInner(config), () => currentSite() ?? config.sites.primary, config.sites.primary);
+			// The shared singleton also serves per-site runtimes, so its site is resolved per query
+			// (request's site handle, else runAsSite, else primary), never fixed at creation.
+			return siteDialect(getInner(config), activeSite, config.sites.primary);
 		},
 
 		/**

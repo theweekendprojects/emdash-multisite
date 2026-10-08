@@ -3,53 +3,198 @@ import { fileURLToPath } from "node:url";
 /**
  * Build-time patch: make core's process-wide caches per-site.
  *
- * Core captures each cache as ONE object when its module loads, so the wrapper
+ * Core keeps each cache as ONE object on `globalThis`, captured when the module
+ * loads (or re-read from a `Symbol.for` slot on every use), so the wrapper
  * cannot swap it per request. This plugin rewrites those declarations in core's
- * published code to `siteScoped(key, init)` (see scope.ts), a Proxy holding one
- * real object per site.
+ * published code:
+ *   - "holder" caches:  `const x = g[KEY] ?? (() => {...})()`  ->  `siteScoped(key, init)`
+ *   - "slot" caches:    `const store = globalThis`              ->  `siteGlobal([keys])`
  *
- * Fail-closed: if a module mentions a cache key but its declaration no longer
- * matches the expected shape (core changed), the build errors instead of
- * shipping an unpatched, leaking cache.
+ * Fail-closed, in two ways:
+ *   1. a known cache whose declaration no longer matches errors the build;
+ *   2. a `Symbol.for("emdash:...")` key that is neither patched nor listed as
+ *      site-independent errors the build (core added a cache we don't know).
  */
 
-interface Rule {
-	/** `Symbol.for(...)` key core uses for the slot. */
-	key: string;
-	/** `const <name> = g[<KEY_CONST>] ?? (() => { ...create + store... })();` */
-	pattern: RegExp;
+/** Caches declared as `const x = g[KEY] ?? (() => {...create + store...})()`. */
+export const HOLDER_KEYS = [
+	"emdash:site-settings",
+	"emdash:collection-slugs",
+	"emdash:taxonomy-defs",
+	"emdash:taxonomy-names",
+	"emdash:byline-field-defs",
+	"emdash:url-pattern-cache",
+	"emdash:redirect-cache",
+	"emdash:redirect-artifact-repair",
+] as const;
+
+/** Caches re-read from a `Symbol.for` slot on every use through a `globalThis` alias. */
+export const SLOT_KEYS = [
+	"emdash:db-cache",
+	"emdash:seed-state",
+	"emdash:runtime-holder",
+	"emdash:setup-verified",
+	"@emdash-cms/core/secrets-cache@2",
+] as const;
+
+/**
+ * Keys that hold no per-site data (build config, per-request state, platform
+ * health), so sharing them across sites is correct.
+ */
+export const SITE_INDEPENDENT_KEYS: Readonly<Record<string, string>> = {
+	"emdash:stored-config": "build-time config; one build serves every site",
+	"emdash:i18n-config": "build-time config",
+	"emdash:request-context": "AsyncLocalStorage; per request",
+	"emdash:request-cache": "WeakMap keyed by request context; per request",
+	"emdash:request-scoped-dbs": "WeakSet of handles; holds no data",
+	"emdash:deferred-tasks": "in-flight promise tracker",
+	"emdash:content-save-hook-context": "AsyncLocalStorage; per request",
+	"emdash:dev-emails": "dev console store",
+	"emdash:foldedTerms": "per-row marker, not a cache",
+	"emdash:foldedBylines": "per-row marker, not a cache",
+	"emdash:foldedBylinesExist": "per-row marker, not a cache",
+	"emdash:migration-config": "build-time integration metadata",
+	"emdash:d1-session-guard": "platform health latch",
+	"emdash:do-singleton-bookmark-sinks": "keyed per Durable Object",
+	"emdash:inline-code-block-lowlight": "library instance",
+	"emdash:warned-deprecated-capability-plugins": "log-once set of plugin ids",
+	// ponytail: only site-independent while the opt-in object cache is OFF. With it on, the
+	// shared KV needs a per-site key prefix (not built yet), so do not enable it multi-site.
+	"emdash:object-cache:memory": "object cache (opt-in, off by default)",
+	"emdash:object-cache:backend": "object cache (opt-in, off by default)",
+	"emdash:object-cache:epochs": "object cache (opt-in, off by default)",
+	"emdash:object-cache:pending-bumps": "object cache (opt-in, off by default)",
+	"emdash:object-cache:last-content-write": "object cache (opt-in, off by default)",
+	"emdash:object-cache:pending-content-write": "object cache (opt-in, off by default)",
+	"emdash:object-cache:write-scope": "object cache (opt-in, off by default)",
+	// ponytail: sandboxed plugins are not supported multi-site in v1 (their bridge opens its own DB).
+	"emdash:sandbox-content-create-callbacks": "sandboxed plugins unsupported in v1",
+	"emdash:sandbox-taxonomy-write-callbacks": "sandboxed plugins unsupported in v1",
+	"emdash:sandbox-content-action-callbacks": "sandboxed plugins unsupported in v1",
+};
+
+const KEY_PATTERN = /Symbol\.for\("((?:emdash:|@emdash-cms\/core\/)[^"]+)"\)/g;
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** Names of the constants bound to `Symbol.for("<key>")` in this module. */
+function keyConsts(code: string, key: string): string[] {
+	const re = new RegExp(`(?:const|let|var) (\\w+)(?::[^=\\n]+)? = Symbol\\.for\\("${escapeRe(key)}"\\)`, "g");
+	return [...code.matchAll(re)].map((m) => m[1]!);
 }
 
-// Two shapes of the same declaration:
-//   dist: const c = g[KEY] ?? (() => { ... })();
-//   src : const c: Type =\n // comment\n (g[KEY] as Type | undefined) ??\n (() => { ... })();
-// The optional parts are limited to a type annotation, `//` comment lines and a cast.
-const SLOT_DECLARATION =
-	/const (\w+)(?::[^=\n]+)? =\s*(?:\/\/[^\n]*\n\s*)*\(?g\[(\w+)\](?: as [^)]+)?\)? \?\?\s*(\(\(\) => \{[\s\S]*?\n\s*\}\)\(\));/;
-
-export const RULES: readonly Rule[] = [{ key: "emdash:site-settings", pattern: SLOT_DECLARATION }];
+/** Cache keys mentioned in a module. */
+export function keysIn(code: string): string[] {
+	return [...new Set([...code.matchAll(KEY_PATTERN)].map((m) => m[1]!))];
+}
 
 const VIRTUAL = "virtual:emdash-multisite/scope";
 const RESOLVED = `\0${VIRTUAL}`;
 const SCOPE_FILE = fileURLToPath(new URL("./scope.ts", import.meta.url));
 
-/** Rewrite one module's source. Returns null when it holds none of the cache keys. */
-export function patchCaches(code: string, id: string): string | null {
-	let out = code;
-	let patched = false;
-	for (const rule of RULES) {
-		if (!out.includes(`Symbol.for("${rule.key}")`)) continue;
-		if (!rule.pattern.test(out)) {
-			throw new Error(
-				`[multisite] cannot patch cache "${rule.key}" in ${id}: its declaration no longer matches. ` +
-					`EmDash core changed; update RULES in emdash-multisite/src/vite.ts.`,
-			);
+function patchHolder(code: string, key: string, id: string): string {
+	const consts = keyConsts(code, key);
+	// dist:  const c = g[KEY] ?? (() => {...})();
+	// src :  const c: Type =\n // comment\n (g[KEY] as Type | undefined) ??\n (() => {...})();
+	for (const k of consts) {
+		const re = new RegExp(
+			`const (\\w+)(?::[^=\\n]+)? =\\s*(?:\\/\\/[^\\n]*\\n\\s*)*\\(?\\w+\\[${k}\\](?: as [^)]+)?\\)? \\?\\?\\s*(\\(\\(\\) => \\{[\\s\\S]*?\\n\\s*\\}\\)\\(\\));`,
+		);
+		if (re.test(code)) {
+			return code.replace(re, (_m, name: string, init: string) =>
+				`const ${name} = __siteScoped(${JSON.stringify(key)}, () => ${init});`);
 		}
-		out = out.replace(rule.pattern, (_m, name: string, _keyConst: string, init: string) =>
-			`const ${name} = __siteScoped(${JSON.stringify(rule.key)}, () => ${init});`);
-		patched = true;
 	}
-	return patched ? `import { siteScoped as __siteScoped } from ${JSON.stringify(VIRTUAL)};\n${out}` : null;
+	throw new Error(
+		`[multisite] cannot patch cache "${key}" in ${id}: its declaration no longer matches the expected shape. ` +
+			`EmDash core changed; update patchHolder in emdash-multisite/src/vite.ts.`,
+	);
+}
+
+/**
+ * Rewrite the `const alias = globalThis` that belongs to each slot cache.
+ *
+ * An alias name like `holder` or `g` is often reused by unrelated functions in
+ * one bundled file, so the declaration is chosen by position: the closest
+ * `<alias> = globalThis` BEFORE the first `alias[KEY]` use of that key. Aliases
+ * are patched individually, each with only the keys it is used with.
+ */
+function patchSlots(code: string, keys: string[], id: string): string {
+	// alias declaration offset -> keys read through it
+	const byDecl = new Map<number, { alias: string; keys: Set<string> }>();
+	for (const key of keys) {
+		const consts = keyConsts(code, key);
+		if (consts.length === 0) {
+			throw new Error(`[multisite] cannot patch cache "${key}" in ${id}: no Symbol.for constant found.`);
+		}
+		let used = false;
+		for (const k of consts) {
+			for (const m of code.matchAll(new RegExp(`(\\w+)\\[${k}\\]`, "g"))) {
+				used = true;
+				const alias = m[1]!;
+				const declRe = new RegExp(`(?:const|let) ${alias}(?::[^=\\n]+)? = globalThis(?: as [^;\\n]+)?;`, "g");
+				let best: number | undefined;
+				for (const d of code.matchAll(declRe)) {
+					if (d.index! < m.index!) best = d.index!;
+				}
+				if (best === undefined) {
+					throw new Error(
+						`[multisite] cannot patch cache "${key}" in ${id}: no \`${alias} = globalThis\` precedes its use.`,
+					);
+				}
+				const entry = byDecl.get(best) ?? { alias, keys: new Set<string>() };
+				entry.keys.add(key);
+				byDecl.set(best, entry);
+			}
+		}
+		if (!used) throw new Error(`[multisite] cannot patch cache "${key}" in ${id}: no slot access found.`);
+	}
+	// Apply from the end so earlier offsets stay valid.
+	let out = code;
+	for (const [offset, { alias, keys: ks }] of [...byDecl].sort((a, b) => b[0] - a[0])) {
+		const declRe = new RegExp(`((?:const|let) ${alias}(?::[^=\\n]+)? = )globalThis(?: as [^;\\n]+)?;`, "y");
+		declRe.lastIndex = offset;
+		const m = declRe.exec(out);
+		if (!m) throw new Error(`[multisite] internal: lost declaration of "${alias}" in ${id}.`);
+		const replacement = `${m[1]}__siteGlobal(${JSON.stringify([...ks])});`;
+		out = out.slice(0, offset) + replacement + out.slice(offset + m[0].length);
+	}
+	return out;
+}
+
+/**
+ * Rewrite one module. Returns null when it holds no cache keys. Throws when a
+ * known cache cannot be patched or an unknown cache key appears.
+ */
+export function patchCaches(code: string, id: string): string | null {
+	const found = keysIn(code);
+	if (found.length === 0) return null;
+
+	const unknown = found.filter(
+		(k) =>
+			!(HOLDER_KEYS as readonly string[]).includes(k) &&
+			!(SLOT_KEYS as readonly string[]).includes(k) &&
+			!(k in SITE_INDEPENDENT_KEYS),
+	);
+	if (unknown.length > 0) {
+		throw new Error(
+			`[multisite] unknown core cache key(s) ${unknown.map((k) => `"${k}"`).join(", ")} in ${id}. ` +
+				`Decide whether each holds per-site data, then add it to HOLDER_KEYS, SLOT_KEYS or SITE_INDEPENDENT_KEYS ` +
+				`in emdash-multisite/src/vite.ts.`,
+		);
+	}
+
+	let out = code;
+	const holders = found.filter((k) => (HOLDER_KEYS as readonly string[]).includes(k));
+	const slots = found.filter((k) => (SLOT_KEYS as readonly string[]).includes(k));
+	for (const key of holders) out = patchHolder(out, key, id);
+	if (slots.length > 0) out = patchSlots(out, slots, id);
+	if (holders.length === 0 && slots.length === 0) return null;
+
+	const imports = [
+		holders.length > 0 ? "siteScoped as __siteScoped" : "",
+		slots.length > 0 ? "siteGlobal as __siteGlobal" : "",
+	].filter(Boolean);
+	return `import { ${imports.join(", ")} } from ${JSON.stringify(VIRTUAL)};\n${out}`;
 }
 
 // Structural type so this package needs no dependency on `vite`.
@@ -66,7 +211,8 @@ export function multisiteCaches(): VitePlugin {
 		name: "emdash-multisite:scope-caches",
 		enforce: "pre",
 		resolveId: (id) => (id === VIRTUAL ? RESOLVED : undefined),
-		load: (id) => (id === RESOLVED ? `export { siteScoped } from ${JSON.stringify(SCOPE_FILE)};` : undefined),
+		load: (id) =>
+			id === RESOLVED ? `export { siteScoped, siteGlobal } from ${JSON.stringify(SCOPE_FILE)};` : undefined,
 		transform(code, id) {
 			const patched = patchCaches(code, id);
 			if (patched === null) return null;
