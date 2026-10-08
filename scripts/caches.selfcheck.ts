@@ -7,11 +7,20 @@
  *   3. every HOLDER/SLOT key is actually found (a stale rule would otherwise pass silently).
  * Fails with a precise message when an EmDash upgrade adds or reshapes a cache.
  */
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "node:fs";
 import { join } from "node:path";
 import { HOLDER_KEYS, SLOT_KEYS, SITE_INDEPENDENT_KEYS, keysIn, patchCaches } from "../src/vite.ts";
 
-const root = process.argv[2] ?? new URL("../node_modules/emdash", import.meta.url).pathname;
+// Scan every package that can ship EmDash cache keys, not just `emdash` itself
+// (e.g. @emdash-cms/auth has its own). Pass one or more package directories, or
+// a site's node_modules to scan emdash + all @emdash-cms/* in it.
+const arg = process.argv[2] ?? new URL("../node_modules", import.meta.url).pathname;
+const roots: string[] = [];
+if (existsSync(join(arg, "emdash"))) roots.push(realpathSync(join(arg, "emdash")));
+const scope = join(arg, "@emdash-cms");
+if (existsSync(scope)) for (const n of readdirSync(scope)) roots.push(realpathSync(join(scope, n)));
+if (roots.length === 0) roots.push(arg);
+const root = roots[0]!;
 const SKIP = new Set(["node_modules", "tests", "test", "__tests__", "locales", "docs"]);
 
 function* walk(dir: string): Generator<string> {
@@ -32,7 +41,7 @@ const fail = (m: string) => {
 
 const seen = new Map<string, number>();
 let filesWithKeys = 0;
-for (const file of walk(root)) {
+for (const file of roots.flatMap((r) => [...walk(r)])) {
 	const code = readFileSync(file, "utf8");
 	if (!code.includes("Symbol.for(")) continue;
 	const keys = keysIn(code);
@@ -43,7 +52,7 @@ for (const file of walk(root)) {
 	try {
 		patched = patchCaches(code, file);
 	} catch (e) {
-		fail(file.replace(root, "emdash") + "\n      " + (e as Error).message.slice(0, 260));
+		fail(file.replace(/^.*\/node_modules\//, "") + "\n      " + (e as Error).message.slice(0, 260));
 		continue;
 	}
 	if (patched === null) continue;
@@ -57,24 +66,29 @@ for (const file of walk(root)) {
 				const before = patched.slice(0, use.index!);
 				const decl = [...before.matchAll(new RegExp(`(?:const|let) ${use[1]}(?::[^=\\n]+)? = ([^;\\n]+);`, "g"))].pop();
 				if (!decl || !decl[1]!.startsWith("__siteGlobal(") || !decl[1]!.includes(JSON.stringify(key)))
-					fail(`${file.replace(root, "emdash")}: "${key}" is read via ${use[1]}[...] but its nearest declaration is \`${decl?.[0]?.slice(0, 70)}\``);
+					fail(`${file.replace(/^.*\/node_modules\//, "")}: "${key}" is read via ${use[1]}[...] but its nearest declaration is \`${decl?.[0]?.slice(0, 70)}\``);
 			}
 		}
 	}
 	for (const key of keys.filter((k) => (HOLDER_KEYS as readonly string[]).includes(k))) {
 		if (!lines.some((l) => l.includes(`__siteScoped(${JSON.stringify(key)}`)))
-			fail(`${file.replace(root, "emdash")}: holder "${key}" was not rewritten`);
+			fail(`${file.replace(/^.*\/node_modules\//, "")}: holder "${key}" was not rewritten`);
 	}
 }
 
+// A rule whose package is not installed (e.g. Cloudflare-only caches on a Node site) is fine;
+// a rule that matches nothing in an installed package means core renamed or removed the cache.
+const installed = new Set(roots.map((r) => r.split("/node_modules/").pop()!));
+const packageOf = (k: string): string => (k.startsWith("emdash.ai-search") ? "@emdash-cms/cloudflare" : "emdash");
 for (const k of [...HOLDER_KEYS, ...SLOT_KEYS]) {
-	if (!seen.has(k)) fail(`rule for "${k}" matched no file in ${root} (stale rule, or core renamed/removed the cache)`);
+	if (!installed.has(packageOf(k)) && !installed.has(packageOf(k).replace(/^@emdash-cms\//, "@emdash-cms+"))) continue;
+	if (!seen.has(k)) fail(`rule for "${k}" matched no file in the scanned packages (stale rule, or core renamed/removed the cache)`);
 }
 const allKnown = new Set<string>([...HOLDER_KEYS, ...SLOT_KEYS, ...Object.keys(SITE_INDEPENDENT_KEYS)]);
 for (const k of seen.keys()) if (!allKnown.has(k)) fail(`unclassified cache key "${k}"`);
 
 console.log(
-	`scanned ${root.split("/node_modules/").pop()}: ${filesWithKeys} files with cache keys, ${seen.size} distinct keys ` +
+	`scanned ${roots.length} packages (${roots.map((r) => r.split("/node_modules/").pop()).join(", ")}): ${filesWithKeys} files with cache keys, ${seen.size} distinct keys ` +
 		`(${HOLDER_KEYS.length} holder + ${SLOT_KEYS.length} slot patched, ${Object.keys(SITE_INDEPENDENT_KEYS).length} classified site-independent)`,
 );
 console.log(failed ? `\n${failed} FAILED` : "\nall caches classified and patchable");

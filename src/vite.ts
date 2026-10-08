@@ -35,6 +35,12 @@ export const SLOT_KEYS = [
 	"emdash:runtime-holder",
 	"emdash:setup-verified",
 	"@emdash-cms/core/secrets-cache@2",
+	// Per-key promise locks for media-usage refreshes; two sites sharing a collection name
+	// ("posts") would otherwise serialise behind, or inherit failures from, each other.
+	"emdash.mediaUsage.contentLocks",
+	"emdash.mediaUsage.collectionLocks",
+	// Synonyms come from the site's own KV settings.
+	"emdash.ai-search.synonym-cache",
 ] as const;
 
 /**
@@ -57,6 +63,16 @@ export const SITE_INDEPENDENT_KEYS: Readonly<Record<string, string>> = {
 	"emdash:d1-session-guard": "platform health latch",
 	"emdash:do-singleton-bookmark-sinks": "keyed per Durable Object",
 	"emdash:inline-code-block-lowlight": "library instance",
+	"emdash:admin-code-block-lowlight": "library instance",
+	"emdash:sandbox-media-storage-callback": "sandboxed plugins unsupported in v1",
+	"emdash.ai-search.workers-module": "process-wide module import",
+	"emdash.ai-search.config": "build-time plugin config; same for every site",
+	"emdash.registry.publisherHandles": "ATProto handle lookups on the public network; identical for every site",
+	"emdash.registry.authoritativeRecordReader": "test override slot",
+	"emdash.openapi.cachedSpec": "built only from build-time config (maxUploadSize); no site data",
+	"@emdash-cms/cloudflare:astro-app": "the Astro app object; one build serves every site",
+	"@emdash-cms/cloudflare:cache-provider": "platform cache provider; one per Worker",
+	"emdash:auth:microsoft-jwks": "Microsoft's public signing keys, keyed by Microsoft tenant; identical for every site",
 	"emdash:warned-deprecated-capability-plugins": "log-once set of plugin ids",
 	// ponytail: only site-independent while the opt-in object cache is OFF. With it on, the
 	// shared KV needs a per-site key prefix (not built yet), so do not enable it multi-site.
@@ -73,7 +89,9 @@ export const SITE_INDEPENDENT_KEYS: Readonly<Record<string, string>> = {
 	"emdash:sandbox-content-action-callbacks": "sandboxed plugins unsupported in v1",
 };
 
-const KEY_PATTERN = /Symbol\.for\("((?:emdash:|@emdash-cms\/core\/)[^"]+)"\)/g;
+// Every Symbol.for key owned by EmDash code: "emdash:..", "emdash.x.y" and "@emdash-cms/..".
+// (Not astro.* or other libraries' keys.)
+const KEY_PATTERN = /Symbol\.for\("((?:emdash[:.]|@emdash-cms\/)[^"]*)"\)/g;
 const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /** Names of the constants bound to `Symbol.for("<key>")` in this module. */
