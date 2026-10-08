@@ -14,6 +14,10 @@ const SLOT_MEMO = Symbol.for("emdash-multisite:slot-proxies");
 
 interface ScopeState {
 	primary: string;
+	/** the one shared inner dialect (set when the database descriptor initialises) */
+	inner?: import("kysely").Dialect;
+	/** resolves the site of the work happening right now */
+	activeSite: () => string;
 	/** per-site Kysely handle -> site id (core stores that handle in its request context) */
 	siteOfDb: WeakMap<object, string>;
 	holders: Map<string, object>;
@@ -26,6 +30,7 @@ export function scopeState(): ScopeState {
 	const g = globalThis as Record<symbol, unknown>;
 	return (g[STATE] ??= {
 		primary: "main",
+		activeSite: () => activeSite(),
 		siteOfDb: new WeakMap(),
 		holders: new Map(),
 		slots: new Map(),

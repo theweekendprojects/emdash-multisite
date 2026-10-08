@@ -52,7 +52,8 @@ const migrate = (site: string) => runAsSite(site, () => runMigrations(wrapped as
 const a = await migrate("main");
 const b = await migrate("acme");
 const c = await migrate("globex");
-eq("every site applies the same, non-zero migration set", a.applied.length > 0 && a.applied.length === b.applied.length && b.applied.length === c.applied.length, true);
+const d = await migrate("acme-co"); // hyphenated, and "acme" is a prefix of it
+eq("every site applies the same, non-zero migration set", a.applied.length > 0 && a.applied.length === b.applied.length && b.applied.length === c.applied.length && c.applied.length === d.applied.length, true);
 eq("re-running migrations is a no-op (introspection translation works)", (await migrate("acme")).applied.length, 0);
 
 const raw = new DatabaseSync(FILE);
@@ -69,7 +70,7 @@ eq("every core table is covered by isSiteTable (else it leaks across sites)", pr
 // The strong invariant: each site's whole schema is identical to the primary's
 // modulo the suffix (and identifier quoting, which the rewrite adds).
 const norm = (sql: string | null, suffix: string) => (sql ?? "").replaceAll(suffix, "").replaceAll('"', "").replace(/\s+/g, " ").trim();
-for (const site of ["acme", "globex"]) {
+for (const site of ["acme", "globex", "acme-co"]) {
 	const suffix = `$${site}`;
 	const mine = ofSite(suffix);
 	const sameNames = JSON.stringify(mine.map((o) => `${o.type}:${o.name.replace(suffix, "")}`).sort()) === JSON.stringify(primary.map((o) => `${o.type}:${o.name}`).sort());
@@ -89,7 +90,7 @@ const bareRefs = (sqlText: string) =>
 	[...sqlText.replace(/'(?:[^']|'')*'/g, "''").matchAll(/\b(?:FROM|JOIN|INTO|UPDATE|TABLE|REFERENCES|EXISTS|TO|ON)\s+"?([A-Za-z_][A-Za-z0-9_$]*)"?|"?([A-Za-z_][A-Za-z0-9_$]*)"?\s*\./gi)]
 		.map((m) => m[1] ?? m[2] ?? "")
 		.filter((id) => coreTables.has(id));
-for (const site of ["acme", "globex"]) {
+for (const site of ["acme", "globex", "acme-co"]) {
 	const bare = ofSite(`$${site}`).flatMap((o) => bareRefs(o.sql ?? "").map((id) => `${o.name}: ${id}`));
 	eq(`${site}: no stored statement references a bare (unsuffixed) core table`, bare, []);
 }
@@ -117,6 +118,14 @@ await ins("main", "m", "site.title");
 await ins("acme", "a", "site.title");
 const read = (site: string) => runAsSite(site, async () => (await sql<{ value: string }>`SELECT value FROM options WHERE name = ${"site.title"}`.execute(wrapped)).rows.map((r) => r.value));
 eq("options isolated per site (raw sql path)", [await read("main"), await read("acme"), await read("globex")], [['"m"'], ['"a"'], []]);
+
+// "acme" is a string prefix of "acme-co": their tables, and what introspection reports for each,
+// must never mix.
+await ins("acme-co", "co", "site.title");
+eq("prefix-sibling sites stay separate", [await read("acme"), await read("acme-co")], [['"a"'], ['"co"']]);
+const tablesAsSeenBy = (site: string) =>
+	runAsSite(site, async () => (await sql<{ name: string }>`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ${"options"}`.execute(wrapped)).rows.length);
+eq("introspection (tableExists-style) sees only its own site's table", [await tablesAsSeenBy("acme"), await tablesAsSeenBy("acme-co"), await tablesAsSeenBy("globex")], [1, 1, 1]);
 
 // per-request path: host decides the site, handle is cached per site
 const rt = makeRuntime(() => inner);

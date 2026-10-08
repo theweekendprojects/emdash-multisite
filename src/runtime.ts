@@ -25,7 +25,11 @@ interface ScopedOpts {
  */
 export function makeRuntime<InnerConfig>(createInner: (config: InnerConfig) => Dialect) {
 	let inner: Dialect | undefined;
-	const getInner = (c: TenancyConfig<InnerConfig>) => (inner ??= createInner(c.inner));
+	const getInner = (c: TenancyConfig<InnerConfig>) => {
+		inner ??= createInner(c.inner);
+		scopeState().inner = inner;
+		return inner;
+	};
 	const perSite = new Map<string, Kysely<unknown>>();
 
 	return {

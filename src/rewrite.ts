@@ -16,7 +16,8 @@
  * "no such table/column" rather than reading another site's data.
  */
 
-const SITE_ID = /^[a-z0-9]{1,24}$/;
+// DNS-label shaped: lowercase letters, digits and inner hyphens, 1-40 chars.
+const SITE_ID = /^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$/;
 export const isSiteId = (s: string): boolean => SITE_ID.test(s);
 
 /** Core tables that do not follow the ec_/_emdash_/_plugin_ naming rule. */
@@ -162,7 +163,7 @@ export function translateRows<R>(sql: string, rows: R[], suffix: string): R[] {
 			if (typeof v === "string" && v.endsWith(suffix)) copy[k] = v.slice(0, -suffix.length);
 		}
 		if (typeof copy["sql"] === "string") {
-			copy["sql"] = copy["sql"].replaceAll(new RegExp(`${suffix.replace("$", "\\$")}(?![A-Za-z0-9_$])`, "g"), "");
+			copy["sql"] = copy["sql"].replaceAll(new RegExp(`${suffix.replace("$", "\\$")}(?![A-Za-z0-9_$-])`, "g"), "");
 		}
 		out.push(copy as unknown as R);
 	}
