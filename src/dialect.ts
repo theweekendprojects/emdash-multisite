@@ -30,7 +30,7 @@ export const currentSite = (): string | undefined => siteStore.getStore();
 export function siteDialect(inner: Dialect, getSite: () => string, primary: string): Dialect {
 	const shared = sharedDriver(inner);
 	return {
-		createAdapter: () => inner.createAdapter(),
+		createAdapter: () => scopeBatch(inner.createAdapter(), getSite, primary),
 		createQueryCompiler: () => inner.createQueryCompiler(),
 		createIntrospector: (db) => inner.createIntrospector(db),
 		createDriver: (): Driver => ({
@@ -47,6 +47,27 @@ export function siteDialect(inner: Dialect, getSite: () => string, primary: stri
 	};
 }
 
+/**
+ * D1 has no transactions, so EmDash calls `adapter.executeAtomicBatch(queries)`
+ * (content writes, block types, ...). That path never touches a connection, so
+ * the per-connection rewrite above is skipped and the writes land in the
+ * PRIMARY site's tables. Wrap it with the same rewrite.
+ */
+function scopeBatch<A extends object>(adapter: A, getSite: () => string, primary: string): A {
+	const batch = (adapter as { executeAtomicBatch?: (qs: CompiledQuery[]) => Promise<QueryResult<unknown>[]> })
+		.executeAtomicBatch;
+	if (typeof batch !== "function") return adapter;
+	(adapter as { executeAtomicBatch: typeof batch }).executeAtomicBatch = async (qs) => {
+		const suffix = suffixFor(getSite(), primary);
+		if (!suffix) return batch.call(adapter, qs);
+		const results = await batch.call(
+			adapter,
+			qs.map((q) => ({ ...q, sql: rewriteSql(q.sql, suffix), parameters: rewriteParams(q.sql, q.parameters, suffix) })),
+		);
+		return results.map((r, i) => ({ ...r, rows: translateRows(qs[i]!.sql, r.rows as never, suffix) }));
+	};
+	return adapter;
+}
 const sharedByInner = new WeakMap<Dialect, { driver: Driver; init: () => Promise<void> }>();
 function sharedDriver(inner: Dialect) {
 	let s = sharedByInner.get(inner);

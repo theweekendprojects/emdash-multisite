@@ -168,6 +168,17 @@ runtime, every query) reads it from ALS/the request db. There is no per-call sit
   HeroUI/Better-Auth-UI, and an `optimizeDeps` entry for `bowser`. See the `multisite-smoke-node`
   repo. These are dev-only; Cloudflare needs none of them.
 
+- **D1 atomic batches bypass the connection rewrite.** On D1 (no transactions),
+  core calls `adapter.executeAtomicBatch(queries)` for content writes, block
+  types and similar. That path never acquires a connection, so without a wrap
+  those writes land in the PRIMARY site's tables (or collide with its rows,
+  e.g. `Block type "marketing_hero" already exists`). `dialect.ts` `scopeBatch`
+  wraps the adapter with the same rewrite. Any new adapter-level entry point in
+  core needs the same treatment.
+- **Seeding a new site needs `includeContent: true`** or the site has
+  collections but no entries. Seeding writes `site:title`; the org-name title
+  write must stay after it.
+
 ## How to verify a change (always do this)
 
 Run with Node ≥ 22.18:

@@ -9,6 +9,9 @@
  * The org slug is the site id and therefore the subdomain: `acme` -> acme.<domain>.
  */
 import { Kysely, sql } from "kysely";
+import { applySeed } from "emdash";
+// @ts-ignore - virtual module provided by EmDash's integration (the bundled seed)
+import { userSeed } from "virtual:emdash/seed";
 import { siteDialect, runAsSite } from "./dialect.ts";
 import { isSiteId } from "./rewrite.ts";
 import { scopeState } from "./scope.ts";
@@ -85,6 +88,16 @@ export async function createSiteForOrg(org: { slug: string; name: string; ownerU
 
 		// 1. the site's tables (core migrations, run as the new site)
 		await provisionWith(db, org.slug);
+
+		// 1b. seed the new site with the bundled seed (collections + starter
+		//     content), the same seed a fresh single-site install gets on first
+		//     run. Migrations alone leave an empty schema with no collections, so
+		//     without this a new tenant has nothing to edit. Idempotent-ish: core's
+		//     applySeed upserts, and this only runs during provisioning.
+		if (userSeed) {
+			// eslint-disable-next-line typescript/no-explicit-any -- core types its own Database/Seed
+			await runAsSite(org.slug, () => applySeed(db as any, userSeed as any, { includeContent: true }));
+		}
 
 		// 2. read the owner's identity and platform auth policy from the control plane
 		const { owner, storage, inherited } = await runAsSite(st.primary, async () => {
