@@ -1,5 +1,7 @@
 import { after } from "emdash";
 import { runAsSite } from "./dialect.ts";
+import { isStaff, listSites } from "./fleet.ts";
+import { fleetPageHtml } from "./fleet-page.ts";
 import {
 	ORG_CREATE_PATH,
 	createSiteForOrg,
@@ -41,12 +43,30 @@ function sitesConfig(): SitesConfig | undefined {
 }
 
 type Next = () => Promise<Response>;
+interface Session {
+	get(key: string): unknown | Promise<unknown>;
+}
 interface Ctx {
 	url: URL;
 	request: Request;
+	session?: Session;
 }
 
 const STATUS_PREFIX = "/api/multisite/sites/";
+const FLEET_API = "/api/multisite/fleet";
+const FLEET_PAGE = "/admin/fleet";
+const html = (body: string, status: number) =>
+	new Response(body, { status, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
+
+/** The signed-in EmDash user id, or null. Set by emdash-better-auth as session "user" = { id }. */
+async function sessionUserId(ctx: Ctx): Promise<string | null> {
+	try {
+		const u = (await ctx.session?.get("user")) as { id?: string } | undefined;
+		return u?.id ?? null;
+	} catch {
+		return null;
+	}
+}
 const json = (body: unknown, status: number) =>
 	new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } });
 
@@ -79,6 +99,24 @@ export async function onRequest(context: Ctx, next: Next): Promise<Response> {
 			if (!isSiteId(slug)) return json({ code: "NOT_FOUND" }, 404);
 			const status = await readStatus(slug);
 			return status ? json(status, 200) : json({ code: "NOT_FOUND" }, 404);
+		}
+
+		// Fleet view — staff only (role 50 on the control plane). The keys to the
+		// whole fleet, so the gate is the point: never reachable by a tenant admin
+		// or an anonymous visitor.
+		if (method === "GET" && pathname === FLEET_API) {
+			if (!(await isStaff(await sessionUserId(context)))) return json({ code: "FORBIDDEN" }, 403);
+			return json({ sites: await listSites() }, 200);
+		}
+
+		// The dashboard shell. The shell itself is harmless (no data), but gate it
+		// too so a stranger sees a sign-in prompt, not an admin-looking page. The
+		// data it fetches is separately gated above.
+		if (method === "GET" && pathname === FLEET_PAGE) {
+			if (!(await isStaff(await sessionUserId(context)))) {
+				return Response.redirect(new URL("/login?redirect=/admin/fleet", context.url), 302);
+			}
+			return html(fleetPageHtml(), 200);
 		}
 
 		if (method === "POST" && pathname === ORG_CREATE_PATH) {

@@ -14,7 +14,8 @@
     "./provision": "./src/provision.ts",
     "./vite": "./src/vite.ts",
     "./middleware": "./src/middleware.ts",
-    "./bootstrap": "./src/bootstrap.ts"
+    "./bootstrap": "./src/bootstrap.ts",
+    "./fleet": "./src/fleet.ts"
   },
   "scripts": {
     "selfcheck": "node --no-warnings scripts/selfcheck.ts",
