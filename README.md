@@ -1,0 +1,272 @@
+# emdash-multisite
+
+**PRIVATE.** Run many EmDash sites from one codebase, one Cloudflare Worker, and one D1 database —
+no Workers for Platforms, no fork of EmDash core. Each site gets its own prefixed tables
+(`ec_posts$acme`); EmDash's in-memory caches are made per-site by a build-time patch; creating a
+Better Auth **organization** provisions a site and its **slug** becomes the subdomain.
+
+> Do not publish to the public npm registry. See [Installing](#installing-private) for private
+> options. Background and full history: `emdash-plan/product/single-db-multisite.md`.
+
+---
+
+## Table of contents
+- [How it works (30 seconds)](#how-it-works-30-seconds)
+- [Requirements](#requirements)
+- [Installing (private)](#installing-private)
+- [Set up a site (the 3 wires)](#set-up-a-site-the-3-wires)
+- [Config reference](#config-reference)
+- [The control-plane site vs tenant sites](#the-control-plane-site-vs-tenant-sites)
+- [Routing / subdomains](#routing--subdomains)
+- [Provisioning a site](#provisioning-a-site)
+- [Local development](#local-development)
+- [Deploy to Cloudflare](#deploy-to-cloudflare)
+- [Tests / self-checks](#tests--self-checks)
+- [Upgrading EmDash (important)](#upgrading-emdash-important)
+- [Operating a fleet](#operating-a-fleet)
+- [Limits & gotchas](#limits--gotchas)
+- [FAQ](#faq)
+- [Package exports](#package-exports)
+
+---
+
+## How it works (30 seconds)
+
+Three mechanisms, three wires in `astro.config.mjs`:
+
+1. **Table prefix** — a wrapped Kysely dialect rewrites SQL so site `acme` reads/writes
+   `ec_posts$acme`, `users$acme`, … The **primary** site keeps unprefixed names, so an existing
+   single-site install is unchanged. `users` is per-site, so roles are per-site with no RBAC change.
+2. **Per-site caches** — a Vite plugin rewrites EmDash's process-wide caches (settings, collections,
+   taxonomies, runtime, secrets, …) so each site gets its own copy in the Worker isolate. Without
+   this, one site's cached settings leak into another. The build **fails loudly** if EmDash core
+   changes a cache it doesn't recognize.
+3. **Outer middleware** — resolves the site from the request hostname before EmDash reads anything,
+   and (on the control-plane site) turns "create an organization" into "create a site".
+
+It is **not an EmDash plugin**: a plugin can't replace the database or patch the build. It plugs
+into slots EmDash already exposes (`database:`, `vite.plugins`, `middleware.outer`).
+
+## Requirements
+
+- **EmDash ≥ 0.30** on **Cloudflare Workers** (D1 + R2). SQLite/Node works for local dev only.
+- **Node ≥ 22.18** for tooling (the self-checks use native TS execution). On Cloudflare the Worker
+  runs the compiled bundle; Node version there is irrelevant.
+- Peer deps (provided by the consuming site): `emdash`, `@emdash-cms/cloudflare`, `kysely`.
+- For the org→site flow: `emdash-better-auth` with the **organization** feature enabled.
+- `pnpm` (the EmDash templates use it).
+
+## Installing (private)
+
+Never `npm publish` to the public registry. Pick one:
+
+- **Git dependency** (separate site repos):
+  ```jsonc
+  // package.json
+  "emdash-multisite": "github:theweekendprojects/emdash-multisite#<tag-or-commit>"
+  ```
+  Pin a tag/commit so sites don't drift. The build machine needs read access to the private repo.
+
+- **pnpm workspace** (sites + this package in one repo): add both to `pnpm-workspace.yaml`, then
+  `"emdash-multisite": "workspace:*"`. Best for a monorepo fleet; no version juggling.
+
+- **GitHub Packages** (private, versioned, feels like npm): publish under
+  `@theweekendprojects/emdash-multisite` with an `.npmrc` scope line pointing at GitHub.
+
+- **Local `file:`** (dev only, folders side by side): `"emdash-multisite": "file:../emdash-multisite"`.
+
+This package ships **TypeScript source** (like `emdash-better-auth`); the consuming site's build
+compiles it. There is no `dist`.
+
+## Set up a site (the 3 wires)
+
+```js
+// astro.config.mjs
+import cloudflare from "@astrojs/cloudflare";
+import { d1, r2 } from "@emdash-cms/cloudflare";
+import { withSites } from "emdash-multisite";          // wire 1
+import { multisiteCaches } from "emdash-multisite/vite"; // wire 3
+import emdash from "emdash/astro";
+import { defineConfig } from "astro/config";
+
+export default defineConfig({
+  output: "server",
+  adapter: cloudflare(),
+  vite: {
+    plugins: [multisiteCaches()],                       // wire 3: per-site cache patch (build-time)
+  },
+  integrations: [
+    emdash({
+      database: withSites(                              // wire 1: per-site tables
+        d1({ binding: "DB" }),
+        { primary: "main", wildcard: "sites.example.com" },
+      ),
+      storage: r2({ binding: "MEDIA" }),
+      middleware: { outer: "emdash-multisite/middleware" }, // wire 2: hostname -> site + org glue
+      // ...authProviders / plugins (e.g. emdash-better-auth) ...
+    }),
+  ],
+});
+```
+
+That's the whole integration: install + three wires. No plugin entry, no EmDash core change.
+
+> A single `emdashMultisite()` integration that collapses the three wires into one array entry is
+> on the roadmap (see `emdash-plan`), but the three wires above are the stable surface today.
+
+## Config reference
+
+`withSites(innerDatabaseDescriptor, sites)` — `sites` is a `SitesConfig`:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `primary` | `string` (required) | The site that keeps **unprefixed** tables. Use for the control plane / your existing single site. |
+| `wildcard` | `string` | Base domain. `acme.<wildcard>` → site `acme`. |
+| `hosts` | `Record<hostname, siteId>` | Exact hostname → site id, for custom domains and for hosts with no wildcard (e.g. `*.workers.dev`). |
+
+Supported inner adapters: `d1({...})` (Cloudflare) and `sqlite({...})` (local/Node dev). Site ids
+are DNS labels: `^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$`. Unknown hostnames resolve to `primary`.
+
+## The control-plane site vs tenant sites
+
+- **Control-plane site = the `primary` site.** This is where people sign up and create
+  organizations. It runs the org→site glue (slug guard, provisioning, status endpoint). Lock its
+  EmDash admin to your staff.
+- **Tenant sites** are every other site. Each has its own `users`, content, settings, and its owner
+  is a real EmDash **admin (role 50)** of that site only — not of any other site.
+- One Better Auth identity on the control plane does **not** grant CMS access elsewhere; each tenant
+  site has its own `users` row for that person (created at provision time).
+
+## Routing / subdomains
+
+The middleware maps the request `Host` to a site: exact `hosts` first, then `wildcard`, else
+`primary`.
+
+- **Wildcard subdomains** (`acme.sites.example.com`): set up once — a `*.sites.example.com` DNS
+  record + a Worker route. After that every new tenant subdomain needs **no** DNS/route/redeploy.
+- **`*.workers.dev` has no wildcard.** For preview deploys, map each hostname explicitly in `hosts`
+  (and `wrangler versions upload --preview-alias <name>`).
+- **Custom domains** (`blog.acme.com`): add to `hosts`, then Cloudflare for SaaS Custom Hostnames
+  (not built here; a later step).
+
+## Provisioning a site
+
+Two ways:
+
+- **Automatic (org→site):** on the control-plane site, a successful
+  `POST /api/auth/organization/create` provisions a site named after the org **slug** in the
+  background. Poll `GET /api/multisite/sites/<slug>` → `{ status: "provisioning" | "ready" |
+  "failed" }`. The org owner becomes admin of the new site and can sign in there with the same
+  credentials.
+- **Manual (script/CLI):** `provisionSite(db, siteId)` runs EmDash's migrations as that site. `db`
+  must be a Kysely built on the wrapped dialect (see `scripts/provision.ts` in the smoke-test site).
+
+Provisioning is **idempotent** — re-running finishes a half-built site. It creates ~227 schema
+objects per site (one full EmDash schema).
+
+## Local development
+
+`workerd` needs macOS 13.5+. If you can run it, use the Cloudflare adapter and `wrangler dev`.
+If you can't (older macOS), develop against the **Node adapter + SQLite**:
+
+```js
+database: withSites(sqlite({ url: "file:./data.db" }), { primary: "main", wildcard: "localhost" }),
+```
+
+Chrome/Firefox resolve `*.localhost` to your machine, so `acme.localhost:4321` hits site `acme`.
+Node-adapter dev needs a few shims that are **not** part of this package and are **not** needed on
+Cloudflare — a `cloudflare:workers` alias, `ssr.noExternal` for the HeroUI/Better-Auth-UI packages,
+and an `optimizeDeps` entry. See the smoke-test site for a working example. Run tooling with Node
+≥ 22.18.
+
+## Deploy to Cloudflare
+
+1. `wrangler d1 create <db>`, put its `database_id` in `wrangler.jsonc` (`binding: "DB"`), add an
+   `r2_buckets` entry (`binding: "MEDIA"`).
+2. Set secrets your auth needs (e.g. `wrangler secret put BETTER_AUTH_SECRET`).
+3. `astro build && wrangler deploy`.
+4. The **first request** to a fresh site runs its migrations (cold ~a few seconds). The control
+   plane (`primary`) is just the unprefixed site.
+
+Nothing in this package creates Cloudflare resources for you — provisioning only writes tables into
+the existing D1. Adding a brand-new Worker/DB per fleet is your deploy, not per-tenant.
+
+## Tests / self-checks
+
+Run with Node ≥ 22.18 (e.g. `~/.nvm/versions/node/v22.23.2/bin/node --no-warnings <script>`):
+
+- `scripts/selfcheck.ts` — runs EmDash's **real migrations** and repositories through the wrapper
+  for several sites; asserts each site's schema equals the primary's modulo the `$site` suffix, FKs
+  stay in-site, triggers fire on their own tables, and content is isolated. Needs `emdash` installed
+  (run it from a consuming site, or point it at one).
+- `scripts/caches.selfcheck.ts <path-to-node_modules>` — the **cache tripwire**: scans `emdash` +
+  all `@emdash-cms/*` and fails if any EmDash cache key is unclassified or a patched declaration
+  changed shape. **Run this on every EmDash upgrade.**
+- `scripts/orgs.selfcheck.ts` — slug validation + org-response parsing (no deps).
+
+## Upgrading EmDash (important)
+
+The cache patch rewrites **EmDash's own code** at build time, so an EmDash upgrade can move it.
+Safe routine:
+
+1. Bump `emdash` (+ `@emdash-cms/*`) in a **staging** build.
+2. Run `scripts/caches.selfcheck.ts` against the new `node_modules`, and `scripts/selfcheck.ts`.
+3. If the build or tripwire fails, it tells you which cache changed — update `HOLDER_KEYS` /
+   `SLOT_KEYS` / `SITE_INDEPENDENT_KEYS` in `src/vite.ts`, re-run.
+4. Only then deploy. **Never auto-upgrade EmDash in production without a build.**
+
+The tripwire failing is the feature: it refuses to ship a cache that would leak across sites.
+
+## Operating a fleet
+
+- **One shared D1 is single-threaded.** One busy site can slow all. Shard across multiple D1s (by
+  site) when a DB gets hot.
+- **Time Travel restores the whole DB** — there is no per-site rollback. For per-site backups, do a
+  per-site D1→R2 export.
+- Every EmDash upgrade migrates **every** site's tables (fleet migration, inside one DB).
+- Billing is per account (rows read/written), so N sites in one DB cost the same as N DBs. Bots on
+  many sites multiply cost — gate signup.
+
+## Limits & gotchas
+
+- **Object cache and R2 are not per-site yet.** Do **not** enable the object cache (`objectCache:`)
+  on a multi-site deploy until the per-site key prefix is added, or cached content/media can cross
+  sites. Keep media isolation in mind.
+- **Sandboxed plugins bypass the wrapper** (their bridge opens its own DB). Use **native** plugins
+  only in a multi-site deploy.
+- **Cron / scheduled publishing runs for the `primary` site only** (a cron tick has no request, so
+  no site). A per-tenant sweep is on the roadmap.
+- **SQL rewrite is positional.** A comma-joined second table (`FROM a, b`) or an alias that reuses a
+  core table name is not rewritten → fails loudly ("no such table"), never leaks silently.
+- **Open signup + unlimited orgs** = unbounded sites = cost risk. Add a per-user cap and
+  verified-email gating before public exposure.
+- **A stuck `provisioning` status** has no auto-retry yet (provisioning itself is repeatable).
+
+## FAQ
+
+**Why not a plugin?** A plugin can't replace the `database` descriptor and can't patch the build.
+Those are exactly the two seams this needs.
+
+**Does it change EmDash core files on disk?** No. It wraps the DB descriptor at runtime and
+transforms EmDash's modules **in the build output** via a Vite plugin. The installed `emdash`
+package is untouched.
+
+**Can I add it to an existing single site later?** Yes. Make that site the `primary` (unprefixed),
+add the three wires, deploy. Its data is untouched; new tenant sites get `$slug` tables.
+
+**Is `emdash-better-auth` required?** Only for the org→site flow and auth. The table-prefix + cache
+mechanisms work without it; you'd then provision sites manually via `provisionSite`.
+
+## Package exports
+
+| Import | What |
+|---|---|
+| `emdash-multisite` | `withSites(inner, sites)`, `resolveSite`, `runAsSite`, `SitesConfig` |
+| `emdash-multisite/vite` | `multisiteCaches()` Vite plugin (per-site cache patch + classification) |
+| `emdash-multisite/middleware` | `onRequest` outer middleware (hostname→site + org→site glue + status route) |
+| `emdash-multisite/db/d1` | runtime entry for the wrapped Cloudflare D1 adapter |
+| `emdash-multisite/db/sqlite` | runtime entry for the wrapped SQLite adapter (local dev) |
+| `emdash-multisite/provision` | `provisionSite(db, siteId)` / `provisionWith` |
+
+Internal (not a stable API): `src/orgs.ts`, `src/scope.ts`, `src/dialect.ts`, `src/rewrite.ts`,
+`src/runtime.ts`.
