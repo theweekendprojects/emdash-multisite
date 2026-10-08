@@ -115,6 +115,11 @@ export async function createSiteForOrg(org: { slug: string; name: string; ownerU
 			}
 			await sql`INSERT INTO options (name, value) VALUES ('site:title', ${JSON.stringify(org.name)})
 				ON CONFLICT(name) DO UPDATE SET value = excluded.value`.execute(db);
+			// The site is born with an admin (the owner, above), so EmDash's
+			// first-run setup wizard must never run on it. Without this flag the
+			// wizard appears and then refuses ("admin user already exists").
+			await sql`INSERT INTO options (name, value) VALUES ('emdash:setup_complete', 'true')
+				ON CONFLICT(name) DO UPDATE SET value = 'true'`.execute(db);
 		});
 
 		await writeStatus(org.slug, { status: "ready", startedAt, readyAt: new Date().toISOString() });

@@ -13,7 +13,8 @@
     "./db/sqlite": "./src/db/sqlite.ts",
     "./provision": "./src/provision.ts",
     "./vite": "./src/vite.ts",
-    "./middleware": "./src/middleware.ts"
+    "./middleware": "./src/middleware.ts",
+    "./bootstrap": "./src/bootstrap.ts"
   },
   "scripts": {
     "selfcheck": "node --no-warnings scripts/selfcheck.ts",

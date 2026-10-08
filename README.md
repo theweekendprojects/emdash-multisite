@@ -164,6 +164,38 @@ Two ways:
 Provisioning is **idempotent** — re-running finishes a half-built site. It creates ~227 schema
 objects per site (one full EmDash schema).
 
+## First admin & the setup wizard
+
+EmDash ships a first-run **setup wizard** (`/_emdash/admin/setup`) that creates the first admin via
+passkey. In a multi-site fleet, sites are born **without** the wizard, so you must make sure it
+never runs — otherwise it appears and then refuses with "admin user already exists" (because a user
+already exists but `emdash:setup_complete` was never set).
+
+- **Tenant sites: automatic.** Provisioning creates the owner as admin and sets
+  `emdash:setup_complete = true`. The wizard never shows. Nothing to do.
+- **Control-plane (`primary`) site: one-time bootstrap.** Its first human signs up through Better
+  Auth as a *subscriber* (role 10), not through the wizard. Promote your staff account to admin and
+  mark setup complete, once:
+
+  ```ts
+  // scripts/bootstrap.ts  — run once after you sign up on the control-plane site
+  import { Kysely } from "kysely";
+  import { createDialect } from "emdash-multisite/db/d1"; // or /db/sqlite in local dev
+  import { bootstrapControlPlane } from "emdash-multisite/bootstrap";
+
+  const db = new Kysely<never>({
+    dialect: createDialect({ inner: { binding: "DB" }, sites: { primary: "main", wildcard: "sites.example.com" } }),
+  });
+  await bootstrapControlPlane(db, "you@example.com"); // promotes to role 50 + sets setup_complete
+  await db.destroy();
+  ```
+
+  (On a deployed Worker you can equivalently run two `wrangler d1 execute` statements: `UPDATE users
+  SET role=50, email_verified=1 WHERE email=…` and set `emdash:setup_complete` to `true`.)
+
+Order on the control plane: deploy → sign up your staff account → run bootstrap → sign in at
+`/_emdash/admin`.
+
 ## Local development
 
 `workerd` needs macOS 13.5+. If you can run it, use the Cloudflare adapter and `wrangler dev`.
@@ -267,6 +299,7 @@ mechanisms work without it; you'd then provision sites manually via `provisionSi
 | `emdash-multisite/db/d1` | runtime entry for the wrapped Cloudflare D1 adapter |
 | `emdash-multisite/db/sqlite` | runtime entry for the wrapped SQLite adapter (local dev) |
 | `emdash-multisite/provision` | `provisionSite(db, siteId)` / `provisionWith` |
+| `emdash-multisite/bootstrap` | `bootstrapControlPlane(db, email)` — one-time control-plane admin + setup flag |
 
 Internal (not a stable API): `src/orgs.ts`, `src/scope.ts`, `src/dialect.ts`, `src/rewrite.ts`,
 `src/runtime.ts`.
