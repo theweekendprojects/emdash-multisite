@@ -112,3 +112,35 @@ export async function readAllStatuses(): Promise<Map<string, SiteStatus>> {
 	}
 	return out;
 }
+
+// Per-site theme, memoised briefly. A plain module variable would be duplicated
+// across bundle chunks, so it lives on globalThis like the other multisite state.
+const THEME_MEMO = Symbol.for("emdash-multisite:theme-memo");
+const THEME_TTL_MS = 60_000;
+type Memo = Map<string, { theme: string | null; expires: number }>;
+const themeMemo = (): Memo => ((globalThis as Record<symbol, unknown>)[THEME_MEMO] ??= new Map()) as Memo;
+
+/**
+ * The theme id recorded for `site` (`multisite:theme`), or null when none is
+ * set (the control plane, or a site that predates themes). Cached for a minute
+ * per isolate: it runs on every public request, and the value only changes
+ * when a site is provisioned. Failures (tables not created yet) are not cached.
+ */
+export async function readSiteTheme(site: string): Promise<string | null> {
+	const memo = themeMemo();
+	const hit = memo.get(site);
+	if (hit && hit.expires > Date.now()) return hit.theme;
+	try {
+		const db = controlDb();
+		const r = await runAsSite(site, () =>
+			sql<{ value: string }>`SELECT value FROM options WHERE name = 'multisite:theme'`.execute(db),
+		);
+		const raw = r.rows[0]?.value;
+		const parsed = raw ? (JSON.parse(raw) as unknown) : null;
+		const theme = typeof parsed === "string" ? parsed : null;
+		memo.set(site, { theme, expires: Date.now() + THEME_TTL_MS });
+		return theme;
+	} catch {
+		return null;
+	}
+}

@@ -202,6 +202,21 @@ runtime, every query) reads it from ALS/the request db. There is no per-call sit
   returns it as an object on create; do not assume that for stored rows (`themeFromMetadata`
   accepts an object or a JSON string).
 
+- **Theme routing is a rewrite, and a rewrite changes `Astro.url`.** `themedNext` in
+  `middleware.ts` calls `next('/theme-routes/<id>/...')`; inside the page `Astro.url.pathname`
+  is the rewritten path and `Astro.originPathname` is the public one. Anything that builds
+  canonical URLs or highlights the current nav item must use `originPathname`. Pass the query
+  string explicitly (`ctx.url.search`) or the target page loses it.
+- **Astro ignores page folders that start with `_`,** so the theme subtree is `theme-routes`,
+  not `_themes`. Keep `THEME_ROUTE_PREFIX` and `NOT_THEMED` (rules.ts) in sync with any new
+  injected route (EmDash, Better Auth, console): a missing entry means that route 404s on
+  themed sites. The self-check lists the known ones.
+- **Stock templates collide on `:root` tokens and global resets.** That is why themes are
+  separate subtrees rather than one dispatcher page importing all four layouts: a page that
+  imports several layouts bundles all their global CSS. Do not "simplify" to a dispatcher.
+- **The theme lookup is on the public hot path.** It is one `options` read per site per minute
+  per isolate (`readSiteTheme`). Do not add per-request queries to `themedNext`.
+
 ## How to verify a change (always do this)
 
 Run with Node ≥ 22.18:

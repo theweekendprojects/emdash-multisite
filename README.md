@@ -290,6 +290,29 @@ default. The wizard shows a picker when there is more than one theme. Provisioni
 theme's seed and records it in the site's `multisite:theme` option, which the host reads to choose
 layouts. Retries re-read the theme from the org, so a recovered site keeps its theme.
 
+### How a site gets its theme's pages
+A theme's pages are a route subtree in the host: `src/pages/theme-routes/<id>/` (its layouts,
+components and styles live in `src/themes/<id>/`). The middleware rewrites every public `GET`/`HEAD`
+request to the subtree of the site's theme, so `/` on a blog site renders
+`theme-routes/blog/index.astro` while the same `/` on a portfolio site renders
+`theme-routes/portfolio/index.astro`. Consequences:
+
+- Themes never collide on a URL, and a theme's CSS loads only on its own pages (the stock templates
+  all define the same `:root` design tokens, so bundling them into one page would clash).
+- A URL the theme does not have (`/pricing` on a blog) falls to the theme's own 404 page.
+- Platform paths are never themed: `/_emdash`, `/_astro`, `/_image`, `/api`, `/auth`, `/login`,
+  `/signup`, `/account`, `/organization`, `/admin`, `/audit-log`, `/sites`, `/.well-known`,
+  `/sitemap*.xml`, `/robots.txt`, `/llms.txt`.
+- Requests to `/theme-routes/...` directly get a 404, so one theme's pages cannot be shown on
+  another site's host.
+- The theme id is read from the site's `multisite:theme` option and memoised for a minute per
+  isolate (it runs on every public request and only changes at provisioning).
+- Astro's `Astro.url` reflects the rewritten path inside a theme page. Use `Astro.originPathname`
+  for the public path (canonical links, "current page" in nav). Stock templates need three small
+  patches for this; see the host's `scripts/import-themes.mjs`.
+
+With no `themes` configured nothing is rewritten and the host's own pages serve every site.
+
 Seeds are applied with `skipMediaDownload`: object storage is shared across sites, so seed images
 are skipped rather than written to a bucket every site shares.
 

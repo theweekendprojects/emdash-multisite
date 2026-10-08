@@ -1,5 +1,5 @@
 /** Pure-logic checks for the org -> site hook: `node --no-warnings scripts/orgs.selfcheck.ts` */
-import { BUNDLED_THEME, DEFAULT_LIMITS, createProblem, effectiveTheme, needsReconcile, parseCreatedOrg, slugProblem, themeFromMetadata, themeProblem } from "../src/rules.ts";
+import { BUNDLED_THEME, DEFAULT_LIMITS, createProblem, effectiveTheme, needsReconcile, isThemeRouteRequest, isThemed, parseCreatedOrg, slugProblem, themeFromMetadata, themeProblem, themeRoute } from "../src/rules.ts";
 import { isSiteId } from "../src/rewrite.ts";
 
 let failed = 0;
@@ -65,5 +65,17 @@ check("explicit default wins", effectiveTheme(null, themes, "blog"), "blog");
 check("removed theme falls back", effectiveTheme("gone", themes, "blog"), "blog");
 check("no themes configured -> bundled seed", effectiveTheme("blog", undefined), BUNDLED_THEME);
 check("theme parsed from created org", parseCreatedOrg({ ...response, metadata: { theme: "blog" } })?.theme, "blog");
+
+// ---- theme routing ----
+for (const p of ["/", "/posts", "/posts/hello", "/pricing", "/rss.xml", "/contact", "/about", "/work/x", "/search", "/some-page", "/sitemapper", "/administrator"]) {
+	check(`public path is themed: ${p}`, isThemed(p), true);
+}
+for (const p of ["/_emdash/admin", "/_astro/x.js", "/_image", "/api/auth/get-session", "/auth/sign-in", "/login", "/signup", "/account", "/account/settings", "/organization", "/admin/fleet", "/audit-log", "/sites", "/sites/new", "/.well-known/x", "/sitemap.xml", "/sitemap-posts.xml", "/robots.txt", "/llms.txt", "/theme-routes/blog"]) {
+	check(`platform path is not themed: ${p}`, isThemed(p), false);
+}
+check("route for root has no trailing slash", themeRoute("blog", "/"), "/theme-routes/blog");
+check("route for nested path", themeRoute("blog", "/posts/hello"), "/theme-routes/blog/posts/hello");
+check("trailing slash dropped", themeRoute("portfolio", "/work/"), "/theme-routes/portfolio/work");
+check("direct subtree request detected", [isThemeRouteRequest("/theme-routes/blog"), isThemeRouteRequest("/theme-routes/blog/x"), isThemeRouteRequest("/theme-routesx"), isThemeRouteRequest("/posts")], [true, true, false, false]);
 console.log(failed ? `\n${failed} FAILED` : "\nall passed");
 process.exit(failed ? 1 : 0);

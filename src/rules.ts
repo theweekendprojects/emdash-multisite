@@ -163,3 +163,32 @@ export function effectiveTheme(requested: string | null, themes: Themes | undefi
 	if (requested && ids.includes(requested)) return requested;
 	return defaultTheme && ids.includes(defaultTheme) ? defaultTheme : ids[0]!;
 }
+
+// ---- theme routing ---------------------------------------------------------
+
+/**
+ * Each theme's pages live under this prefix in the host (`src/pages/theme-routes/<id>/`).
+ * The middleware rewrites a public request to its site's theme subtree, so two
+ * themes can both own `/` or `/contact` without colliding, and each theme's CSS
+ * only loads on its own pages.
+ */
+export const THEME_ROUTE_PREFIX = "/theme-routes";
+
+/** Paths owned by EmDash, Better Auth, the console or the platform: never themed. */
+const NOT_THEMED =
+	/^\/(?:_emdash|_astro|_image|api|auth|login|signup|account|organization|admin|audit-log|sites|\.well-known|theme-routes)(?:\/|$)|^\/(?:sitemap(?:-[^/]+)?\.xml|robots\.txt|llms\.txt)$/;
+
+/** Is this a public page path that the site's theme renders? */
+export function isThemed(pathname: string): boolean {
+	return !NOT_THEMED.test(pathname);
+}
+
+/** Does this request address the theme subtree directly (which would bypass site selection)? */
+export function isThemeRouteRequest(pathname: string): boolean {
+	return pathname === THEME_ROUTE_PREFIX || pathname.startsWith(`${THEME_ROUTE_PREFIX}/`);
+}
+
+/** `/posts/hello` + `blog` -> `/theme-routes/blog/posts/hello`. */
+export function themeRoute(theme: string, pathname: string): string {
+	return `${THEME_ROUTE_PREFIX}/${theme}${pathname === "/" ? "" : pathname.replace(/\/$/, "")}`;
+}

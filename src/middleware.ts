@@ -14,8 +14,8 @@ import {
 	reconcile,
 	slugProblem,
 } from "./orgs.ts";
-import { isEmailVerified, readOrgs, warm } from "./registry.ts";
-import { DEFAULT_LIMITS, createProblem, effectiveTheme, themeFromMetadata, themeProblem, type Limits } from "./rules.ts";
+import { isEmailVerified, readOrgs, readSiteTheme, warm } from "./registry.ts";
+import { DEFAULT_LIMITS, createProblem, effectiveTheme, isThemeRouteRequest, isThemed, themeFromMetadata, themeProblem, themeRoute } from "./rules.ts";
 import { isSiteId } from "./rewrite.ts";
 import { scopeState } from "./scope.ts";
 import { resolveSite, type SitesConfig } from "./sites.ts";
@@ -49,7 +49,8 @@ function sitesConfig(): SitesConfig | undefined {
 	return (emdashConfig as WithSites).database?.config?.sites;
 }
 
-type Next = () => Promise<Response>;
+/** Astro's `next`; a path argument rewrites the request. */
+type Next = (rewrite?: string) => Promise<Response>;
 interface Session {
 	get(key: string): unknown | Promise<unknown>;
 }
@@ -113,6 +114,24 @@ async function guardOrgCreate(ctx: Ctx, sites: SitesConfig): Promise<Response | 
 	return problem ? json({ code: problem.code, message: problem.message }, problem.status) : null;
 }
 
+/**
+ * Hand the request to EmDash, rewritten to the site's theme subtree when the
+ * path is a public page. With no themes configured nothing is rewritten and
+ * the host's own pages serve every site.
+ *
+ * Direct requests to the subtree (`/theme-routes/...`) are refused: they would
+ * skip site selection and show one theme's pages on another site's host.
+ */
+async function themedNext(ctx: Ctx, sites: SitesConfig, site: string, next: Next): Promise<Response> {
+	if (!sites.themes) return next();
+	const { pathname } = ctx.url;
+	if (isThemeRouteRequest(pathname)) return new Response("Not found", { status: 404 });
+	if ((ctx.request.method !== "GET" && ctx.request.method !== "HEAD") || !isThemed(pathname)) return next();
+	await warm();
+	const theme = effectiveTheme(await readSiteTheme(site), sites.themes, sites.defaultTheme);
+	return next(themeRoute(theme, pathname) + ctx.url.search);
+}
+
 export async function onRequest(context: Ctx, next: Next): Promise<Response> {
 	const sites = sitesConfig();
 	if (!sites) return next();
@@ -121,7 +140,7 @@ export async function onRequest(context: Ctx, next: Next): Promise<Response> {
 	const site = resolveSite(context.url.hostname, sites);
 
 	return runAsSite(site, async () => {
-		if (site !== sites.primary) return next();
+		if (site !== sites.primary) return themedNext(context, sites, site, next);
 		const { pathname } = context.url;
 		const { method } = context.request;
 		if (pathname.startsWith("/api/multisite/") || pathname === FLEET_PAGE || pathname === ORG_CREATE_PATH) await warm();
@@ -213,6 +232,6 @@ export async function onRequest(context: Ctx, next: Next): Promise<Response> {
 			return response;
 		}
 
-		return next();
+		return themedNext(context, sites, site, next);
 	});
 }
