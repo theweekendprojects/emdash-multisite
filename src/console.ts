@@ -5,7 +5,7 @@
  */
 import { isStaff } from "./fleet.ts";
 import { isEmailVerified, readAllStatuses, readOrgs } from "./registry.ts";
-import { DEFAULT_LIMITS, needsReconcile, slugProblem, type SiteStatus } from "./rules.ts";
+import { DEFAULT_LIMITS, effectiveTheme, needsReconcile, slugProblem, themeFromMetadata, type SiteStatus } from "./rules.ts";
 import { siteUrl, type SitesConfig } from "./sites.ts";
 
 export interface MySite {
@@ -13,6 +13,8 @@ export interface MySite {
 	name: string;
 	/** The user's Better Auth role in this org: owner, admin, member. */
 	role: string;
+	/** Theme display name, or null when the platform has a single bundled theme. */
+	theme: string | null;
 	status: SiteStatus["status"] | "unknown";
 	error?: string;
 	/** Public address, or null when no hostname is configured for the site. */
@@ -50,6 +52,7 @@ export async function consoleState(userId: string, config: SitesConfig): Promise
 			slug: org.slug,
 			name: org.name,
 			role: me.role,
+			theme: config.themes ? (config.themes[effectiveTheme(themeFromMetadata(org.metadata), config.themes, config.defaultTheme)]?.name ?? null) : null,
 			status: st?.status ?? "unknown",
 			...(st?.status === "failed" ? { error: st.error } : {}),
 			url,

@@ -31,15 +31,18 @@ interface CreatedOrg {
 	id?: string;
 	slug?: string;
 	name?: string;
+	metadata?: unknown;
 	members?: Array<{ userId?: string; role?: string }>;
 }
 
 /** Pull the fields provisioning needs out of Better Auth's create-org response. */
-export function parseCreatedOrg(body: unknown): { slug: string; name: string; ownerUserId: string } | null {
+export function parseCreatedOrg(
+	body: unknown,
+): { slug: string; name: string; ownerUserId: string; theme: string | null } | null {
 	const o = body as CreatedOrg | null;
 	const owner = o?.members?.find((m) => m.role === "owner") ?? o?.members?.[0];
 	if (!o?.slug || !o.name || !owner?.userId) return null;
-	return { slug: o.slug, name: o.name, ownerUserId: owner.userId };
+	return { slug: o.slug, name: o.name, ownerUserId: owner.userId, theme: themeFromMetadata(o.metadata) };
 }
 
 // ---- limits ----------------------------------------------------------------
@@ -104,4 +107,59 @@ export function needsReconcile(status: SiteStatus | null, now: number, staleMs =
 	if (status.status === "failed") return true;
 	if (status.status === "provisioning") return now - Date.parse(status.startedAt) > staleMs;
 	return false;
+}
+
+// ---- themes ----------------------------------------------------------------
+
+/** What a theme is to the platform. Serializable: it lives in the build-time config. */
+export interface ThemeDef {
+	/** Shown in the picker. */
+	name: string;
+	description?: string;
+	/** EmDash seed (collections, settings, starter content) applied when a site picks this theme. */
+	seed?: unknown;
+}
+export type Themes = Record<string, ThemeDef>;
+
+/** Theme ids end up in an option value and a URL query, so keep them boring. */
+export const THEME_ID = /^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$/;
+
+/** Id used when no themes are configured: the host's single bundled seed. */
+export const BUNDLED_THEME = "default";
+
+/**
+ * The theme id carried in a Better Auth organization's `metadata`. Depending on
+ * who wrote the row it is an object or a JSON string.
+ */
+export function themeFromMetadata(metadata: unknown): string | null {
+	let m = metadata;
+	if (typeof m === "string") {
+		try {
+			m = JSON.parse(m);
+		} catch {
+			return null;
+		}
+	}
+	const t = (m as { theme?: unknown } | null)?.theme;
+	return typeof t === "string" && t ? t : null;
+}
+
+/** Why `requested` cannot be used, or `null` (absent is fine: the default applies). */
+export function themeProblem(requested: unknown, themes: Themes | undefined): string | null {
+	if (requested === undefined || requested === null) return null;
+	if (typeof requested !== "string" || !THEME_ID.test(requested)) return "Choose one of the available themes.";
+	if (!themes || !Object.hasOwn(themes, requested)) return "Choose one of the available themes.";
+	return null;
+}
+
+/**
+ * The theme a site gets: the requested one when it is configured, else the
+ * default (`defaultTheme`, else the first configured, else the bundled seed).
+ * A stored theme that has since been removed from the config falls back too.
+ */
+export function effectiveTheme(requested: string | null, themes: Themes | undefined, defaultTheme?: string): string {
+	const ids = Object.keys(themes ?? {});
+	if (ids.length === 0) return BUNDLED_THEME;
+	if (requested && ids.includes(requested)) return requested;
+	return defaultTheme && ids.includes(defaultTheme) ? defaultTheme : ids[0]!;
 }

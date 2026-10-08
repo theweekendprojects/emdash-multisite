@@ -9,12 +9,13 @@ import {
 	createSiteForOrg,
 	parseCreatedOrg,
 	pendingReconcile,
+	planFor,
 	readStatus,
 	reconcile,
 	slugProblem,
 } from "./orgs.ts";
 import { isEmailVerified, readOrgs, warm } from "./registry.ts";
-import { DEFAULT_LIMITS, createProblem, type Limits } from "./rules.ts";
+import { DEFAULT_LIMITS, createProblem, effectiveTheme, themeFromMetadata, themeProblem, type Limits } from "./rules.ts";
 import { isSiteId } from "./rewrite.ts";
 import { scopeState } from "./scope.ts";
 import { resolveSite, type SitesConfig } from "./sites.ts";
@@ -82,15 +83,20 @@ const json = (body: unknown, status: number) =>
  * Bad address, unverified email, or over a limit. Anonymous callers fall
  * through so Better Auth answers 401 itself.
  */
-async function guardOrgCreate(ctx: Ctx, primary: string, limits: Limits): Promise<Response | null> {
-	let body: { slug?: unknown } | null = null;
+async function guardOrgCreate(ctx: Ctx, sites: SitesConfig): Promise<Response | null> {
+	const { primary } = sites;
+	const limits = sites.limits ?? DEFAULT_LIMITS;
+	let body: { slug?: unknown; metadata?: unknown } | null = null;
 	try {
-		body = (await ctx.request.clone().json()) as { slug?: unknown };
+		body = (await ctx.request.clone().json()) as { slug?: unknown; metadata?: unknown };
 	} catch {
 		return null; // not JSON: let Better Auth produce its own error
 	}
 	const addressProblem = slugProblem(body?.slug, primary);
 	if (addressProblem) return json({ code: "INVALID_SITE_ADDRESS", message: addressProblem }, 400);
+
+	const themeIssue = themeProblem(themeFromMetadata(body?.metadata) ?? undefined, sites.themes);
+	if (themeIssue && sites.themes) return json({ code: "INVALID_THEME", message: themeIssue }, 400);
 
 	const userId = await sessionUserId(ctx);
 	if (!userId) return null;
@@ -140,6 +146,16 @@ export async function onRequest(context: Ctx, next: Next): Promise<Response> {
 			if (!userId) return json({ code: "UNAUTHORIZED" }, 401);
 			return json(await consoleState(userId, sites), 200);
 		}
+		// Themes a new site can pick (no seeds: those stay on the server).
+		if (method === "GET" && pathname === "/api/multisite/themes") {
+			if (!(await sessionUserId(context))) return json({ code: "UNAUTHORIZED" }, 401);
+			const entries = Object.entries(sites.themes ?? {});
+			const fallback = effectiveTheme(null, sites.themes, sites.defaultTheme);
+			return json(
+				{ default: fallback, themes: entries.map(([id, t]) => ({ id, name: t.name, description: t.description ?? "" })) },
+				200,
+			);
+		}
 		if (method === "GET" && pathname === "/api/multisite/slug-check") {
 			if (!(await sessionUserId(context))) return json({ code: "UNAUTHORIZED" }, 401);
 			return json(await checkAddress(context.url.searchParams.get("slug"), sites.primary), 200);
@@ -155,7 +171,7 @@ export async function onRequest(context: Ctx, next: Next): Promise<Response> {
 			if (!org) return json({ code: "NOT_FOUND" }, 404);
 			if (org.ownerUserId !== userId && !(await isStaff(userId))) return json({ code: "FORBIDDEN" }, 403);
 			if ((await pendingReconcile(slug)).length === 0) return json({ code: "NOT_NEEDED" }, 409);
-			after(async () => void (await runAsSite(site, () => reconcile(slug))));
+			after(async () => void (await runAsSite(site, () => reconcile(sites, slug))));
 			return json({ retrying: true }, 202);
 		}
 
@@ -163,7 +179,7 @@ export async function onRequest(context: Ctx, next: Next): Promise<Response> {
 		if (method === "POST" && pathname === RECONCILE_API) {
 			if (!(await isStaff(await sessionUserId(context)))) return json({ code: "FORBIDDEN" }, 403);
 			const slugs = await pendingReconcile();
-			if (slugs.length) after(async () => void (await runAsSite(site, () => reconcile())));
+			if (slugs.length) after(async () => void (await runAsSite(site, () => reconcile(sites))));
 			return json({ pending: slugs, started: slugs[0] ?? null }, 202);
 		}
 
@@ -186,13 +202,13 @@ export async function onRequest(context: Ctx, next: Next): Promise<Response> {
 		}
 
 		if (method === "POST" && pathname === ORG_CREATE_PATH) {
-			const rejected = await guardOrgCreate(context, sites.primary, sites.limits ?? DEFAULT_LIMITS);
+			const rejected = await guardOrgCreate(context, sites);
 			if (rejected) return rejected;
 			const response = await next();
 			if (response.status === 200) {
 				const org = parseCreatedOrg(await response.clone().json().catch(() => null));
 				// Provisioning outlives the response: `after` uses the Worker's waitUntil.
-				if (org) after(() => runAsSite(site, () => createSiteForOrg(org)));
+				if (org) after(() => runAsSite(site, () => createSiteForOrg(org, planFor(sites, { theme: org.theme }))));
 			}
 			return response;
 		}

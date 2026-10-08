@@ -44,7 +44,7 @@ const CLIENT_JS = String.raw`
     const err = s.error ? '<p class="errtext">' + esc(s.error) + '</p>' : "";
     const retry = s.canRetry ? '<button class="btn" data-retry="' + esc(s.slug) + '">Retry setup</button>' : "";
     return '<article class="card"><div class="row"><h2>' + esc(s.name) + '</h2>' + status(s.status) + '</div>' +
-      '<p class="muted"><code>' + esc(s.slug) + '</code> \u00b7 ' + esc(s.role) + '</p>' + err + noUrl +
+      '<p class="muted"><code>' + esc(s.slug) + '</code> \u00b7 ' + esc(s.role) + (s.theme ? ' \u00b7 ' + esc(s.theme) : '') + '</p>' + err + noUrl +
       '<div class="actions">' + open + retry + '</div></article>';
   };
 
@@ -90,6 +90,13 @@ const CLIENT_JS = String.raw`
       root.innerHTML = '<div class="note">You own ' + me.owned + ' of ' + me.max + ' sites. That is the limit.</div><p><a href="/sites">Back to my sites</a></p>';
       return;
     }
+    const tr = await getJson("/api/multisite/themes");
+    const themes = (tr.body && tr.body.themes) || [];
+    const picker = themes.length > 1
+      ? '<fieldset class="themes"><legend>Theme</legend>' + themes.map((t) =>
+          '<label class="theme"><input type="radio" name="theme" value="' + esc(t.id) + '"' + (t.id === tr.body.default ? " checked" : "") + '>' +
+          '<span><strong>' + esc(t.name) + '</strong><small>' + esc(t.description) + '</small></span></label>').join("") + '</fieldset>'
+      : "";
     root.innerHTML =
       '<h1>Create a site</h1>' +
       '<form id="f" novalidate>' +
@@ -98,7 +105,7 @@ const CLIENT_JS = String.raw`
       '<label for="slug">Address</label>' +
       '<div class="addr"><input id="slug" name="slug" autocomplete="off" maxlength="40" required aria-describedby="slugmsg">' +
       '<span class="muted" id="suffix"></span></div>' +
-      '<p id="slugmsg" class="muted" aria-live="polite"></p>' +
+      '<p id="slugmsg" class="muted" aria-live="polite"></p>' + picker +
       '<p id="formerr" class="errtext" role="alert"></p>' +
       '<button class="btn primary" id="go" type="submit" disabled>Create site</button> ' +
       '<a class="btn" href="/sites">Cancel</a>' +
@@ -129,7 +136,8 @@ const CLIENT_JS = String.raw`
       go.disabled = true; ferr.textContent = "";
       const res = await getJson("/api/auth/organization/create", {
         method: "POST", headers: { "content-type": "application/json", accept: "application/json" },
-        body: JSON.stringify({ name: name.value.trim(), slug: slug.value }),
+        body: JSON.stringify(Object.assign({ name: name.value.trim(), slug: slug.value },
+          themes.length > 1 ? { metadata: { theme: (document.querySelector('input[name="theme"]:checked') || {}).value } } : {})),
       });
       if (!res.ok) {
         ferr.textContent = (res.body && (res.body.message || res.body.code)) || ("Could not create the site (HTTP " + res.status + ").");
@@ -217,6 +225,13 @@ const STYLE = String.raw`
     background: light-dark(#fff, #141618); color: inherit; }
   .addr { display: flex; align-items: center; gap: 8px; } .addr input { flex: 1; }
   form .btn { margin-top: 16px; }
+  fieldset.themes { border: 0; padding: 0; margin: 16px 0 0; display: grid; gap: 8px; }
+  fieldset.themes legend { font-weight: 600; margin-bottom: 6px; padding: 0; }
+  label.theme { display: flex; align-items: flex-start; gap: 10px; margin: 0; font-weight: 400; padding: 10px 12px;
+    border: 1px solid light-dark(#d1d5db, #2b2f33); border-radius: 10px; background: light-dark(#fff, #141618); cursor: pointer; }
+  label.theme:has(input:checked) { border-color: #2563eb; box-shadow: 0 0 0 1px #2563eb; }
+  label.theme input { width: auto; margin-top: 4px; }
+  label.theme small { display: block; color: light-dark(#6b7280, #9aa0a6); }
 `;
 
 export function consolePageHtml(mode: "list" | "new"): string {

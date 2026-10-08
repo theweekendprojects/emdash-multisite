@@ -14,7 +14,8 @@ import { applySeed } from "emdash";
 import { userSeed } from "virtual:emdash/seed";
 import { runAsSite } from "./dialect.ts";
 import { isSiteId } from "./rewrite.ts";
-import { STALE_PROVISIONING_MS, needsReconcile, type SiteStatus } from "./rules.ts";
+import { BUNDLED_THEME, STALE_PROVISIONING_MS, effectiveTheme, needsReconcile, themeFromMetadata, type SiteStatus } from "./rules.ts";
+import type { SitesConfig } from "./sites.ts";
 import { controlDb, readOrgs, siteHasTables } from "./registry.ts";
 import { scopeState } from "./scope.ts";
 import { provisionWith } from "./provision.ts";
@@ -58,7 +59,10 @@ async function releaseStaleLock(db: ReturnType<typeof controlDb>, slug: string):
  * Create the site `slug` and hand it to `ownerUserId`. Idempotent: running it
  * again on a half-provisioned site completes it.
  */
-export async function createSiteForOrg(org: { slug: string; name: string; ownerUserId: string }): Promise<void> {
+export async function createSiteForOrg(
+	org: { slug: string; name: string; ownerUserId: string },
+	plan: { theme: string; seed?: unknown } = { theme: BUNDLED_THEME },
+): Promise<void> {
 	const st = scopeState();
 	const startedAt = new Date().toISOString();
 	await writeStatus(org.slug, { status: "provisioning", startedAt });
@@ -73,14 +77,16 @@ export async function createSiteForOrg(org: { slug: string; name: string; ownerU
 		// 1. the site's tables (core migrations, run as the new site)
 		await provisionWith(db, org.slug);
 
-		// 1b. seed the new site with the bundled seed (collections + starter
-		//     content), the same seed a fresh single-site install gets on first
-		//     run. Migrations alone leave an empty schema with no collections, so
-		//     without this a new tenant has nothing to edit. Idempotent-ish: core's
-		//     applySeed upserts, and this only runs during provisioning.
-		if (userSeed) {
+		// 1b. seed the new site with its theme's seed (collections + starter
+		//     content), or the host's bundled seed when no themes are configured.
+		//     Migrations alone leave an empty schema with no collections, so
+		//     without this a new tenant has nothing to edit. core's applySeed
+		//     upserts, so a retry is safe. Media is not downloaded: object
+		//     storage is shared, not per-site (see AGENTS.md).
+		const seed = plan.seed ?? userSeed;
+		if (seed) {
 			// eslint-disable-next-line typescript/no-explicit-any -- core types its own Database/Seed
-			await runAsSite(org.slug, () => applySeed(db as any, userSeed as any, { includeContent: true }));
+			await runAsSite(org.slug, () => applySeed(db as any, seed as any, { includeContent: true, skipMediaDownload: true }));
 		}
 
 		// 2. read the owner's identity and platform auth policy from the control plane
@@ -110,6 +116,8 @@ export async function createSiteForOrg(org: { slug: string; name: string; ownerU
 				await sql`INSERT INTO options (name, value) VALUES (${r.name}, ${r.value})
 					ON CONFLICT(name) DO NOTHING`.execute(db);
 			}
+			await sql`INSERT INTO options (name, value) VALUES ('multisite:theme', ${JSON.stringify(plan.theme)})
+				ON CONFLICT(name) DO UPDATE SET value = excluded.value`.execute(db);
 			await sql`INSERT INTO options (name, value) VALUES ('site:title', ${JSON.stringify(org.name)})
 				ON CONFLICT(name) DO UPDATE SET value = excluded.value`.execute(db);
 			// The site is born with an admin (the owner, above), so EmDash's
@@ -128,6 +136,12 @@ export async function createSiteForOrg(org: { slug: string; name: string; ownerU
 			error: error instanceof Error ? error.message : String(error),
 		}).catch(() => {});
 	}
+}
+
+/** Theme id and seed for a site, from what was requested at creation (org metadata). */
+export function planFor(sites: SitesConfig, metadata: unknown): { theme: string; seed?: unknown } {
+	const theme = effectiveTheme(themeFromMetadata(metadata), sites.themes, sites.defaultTheme);
+	return { theme, seed: sites.themes?.[theme]?.seed };
 }
 
 /**
@@ -160,10 +174,10 @@ export async function pendingReconcile(only?: string): Promise<string[]> {
  * stuck in `provisioning`. Call again for the next one.
  * ponytail: upgrade path is a Queue or Workflow that runs one site per message.
  */
-export async function reconcile(only?: string): Promise<string[]> {
+export async function reconcile(sites: SitesConfig, only?: string): Promise<string[]> {
 	const [slug] = await pendingReconcile(only);
 	if (!slug) return [];
 	const org = (await readOrgs()).find((o) => o.slug === slug)!;
-	await createSiteForOrg({ slug, name: org.name, ownerUserId: org.ownerUserId! });
+	await createSiteForOrg({ slug, name: org.name, ownerUserId: org.ownerUserId! }, planFor(sites, org.metadata));
 	return [slug];
 }

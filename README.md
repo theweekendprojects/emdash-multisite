@@ -125,6 +125,9 @@ That's the whole integration: install + three wires. No plugin entry, no EmDash 
 | `hosts` | `Record<hostname, siteId>` | Exact hostname → site id, for custom domains and for hosts with no wildcard (e.g. `*.workers.dev`). |
 | `limits` | `{ sitesPerUser?, totalSites? }` | Caps on site creation. Default `{ sitesPerUser: 3 }`; pass `{}` for no caps. See [Creating sites](#creating-sites-limits-and-recovery). |
 
+| `themes` | `Record<id, { name, description?, seed? }>` | Themes a new site can pick. Each `seed` is an EmDash seed JSON applied when the site is created. Omit for a single theme (the host's bundled seed). |
+| `defaultTheme` | `string` | Preselected in the wizard and used when none is requested. Defaults to the first theme. |
+
 Supported inner adapters: `d1({...})` (Cloudflare) and `sqlite({...})` (local/Node dev). Site ids
 are DNS labels: `^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$`. Unknown hostnames resolve to `primary`.
 
@@ -263,6 +266,32 @@ Anonymous visitors are sent to `/login?redirect=<page>`. Both pages use `GET /ap
 through Better Auth's `organization/create`, so the checks below apply to them too. A site's
 public URL comes from `hosts` (exact entry) or `wildcard`; with neither configured the card says
 no public address is set up.
+
+## Themes
+A theme is a seed (collections, settings, starter content) plus the page layouts that render it.
+The seeds are configured here; the layouts ship in the host codebase (one Worker, one build).
+
+```js
+const seed = (id) => JSON.parse(readFileSync(new URL(`./themes/${id}.seed.json`, import.meta.url), "utf8"));
+withSites(d1({ binding: "DB" }), {
+  primary: "main",
+  wildcard: "example.com",
+  themes: {
+    marketing: { name: "Marketing", description: "Landing page, pricing, contact.", seed: seed("marketing") },
+    blog: { name: "Blog", description: "Posts, categories, tags.", seed: seed("blog") },
+  },
+  defaultTheme: "marketing",
+});
+```
+
+The theme id travels in the organization `metadata` (`{ "theme": "blog" }`) on
+`organization/create`; an unknown id is rejected with `400 INVALID_THEME`, a missing one gets the
+default. The wizard shows a picker when there is more than one theme. Provisioning applies that
+theme's seed and records it in the site's `multisite:theme` option, which the host reads to choose
+layouts. Retries re-read the theme from the org, so a recovered site keeps its theme.
+
+Seeds are applied with `skipMediaDownload`: object storage is shared across sites, so seed images
+are skipped rather than written to a bucket every site shares.
 
 ## Creating sites, limits and recovery
 Creating a site = creating a Better Auth organization (`POST /api/auth/organization/create`); the

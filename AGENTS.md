@@ -193,6 +193,15 @@ runtime, every query) reads it from ALS/the request db. There is no per-call sit
 - **Pure rules live in `rules.ts`** (no virtual modules) so the self-checks run under plain
   Node. Put new decision logic there, not in `orgs.ts` (which imports `virtual:emdash/seed`).
 
+- **Themes are config, seeds are embedded.** `SitesConfig.themes[id].seed` lives in the
+  build-time database descriptor (so it is serialized into the Worker). Fine for a handful
+  of seeds (tens of KB each); past that, generate a virtual module instead. Theme ids are
+  validated against `THEME_ID` because they end up in an option value and a query string.
+- **Org `metadata` is the source of truth for the theme**, not the request: retry and
+  reconcile run with no request, so they read it back via `OrgRecord.metadata`. Better Auth
+  returns it as an object on create; do not assume that for stored rows (`themeFromMetadata`
+  accepts an object or a JSON string).
+
 ## How to verify a change (always do this)
 
 Run with Node ≥ 22.18:

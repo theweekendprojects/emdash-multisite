@@ -1,5 +1,5 @@
 import { isSiteId } from "./rewrite.ts";
-import type { Limits } from "./rules.ts";
+import { THEME_ID, type Limits, type Themes } from "./rules.ts";
 
 /** Serializable (lives in the build-time database descriptor). */
 export interface SitesConfig {
@@ -11,10 +11,26 @@ export interface SitesConfig {
 	wildcard?: string;
 	/** Caps on site creation. Defaults to 3 sites per user, no platform cap. */
 	limits?: Limits;
+	/**
+	 * Themes a new site can pick, each with its seed. Omit for a single theme
+	 * (the host's bundled seed).
+	 * ponytail: seeds are embedded in the build-time config, which bloats it by
+	 * the size of the seeds (tens of KB each). Upgrade path: a virtual module
+	 * generated from a themes/ directory.
+	 */
+	themes?: Themes;
+	/** Theme preselected in the wizard and used when none is requested. Defaults to the first theme. */
+	defaultTheme?: string;
 }
 
 export function assertSitesConfig(c: SitesConfig): void {
 	if (!isSiteId(c.primary)) throw new Error(`[multisite] invalid primary site id: ${c.primary}`);
+	for (const id of Object.keys(c.themes ?? {})) {
+		if (!THEME_ID.test(id)) throw new Error(`[multisite] invalid theme id: ${id}`);
+	}
+	if (c.defaultTheme && !Object.hasOwn(c.themes ?? {}, c.defaultTheme)) {
+		throw new Error(`[multisite] defaultTheme "${c.defaultTheme}" is not in themes`);
+	}
 	for (const [k, v] of Object.entries(c.limits ?? {})) {
 		if (v !== undefined && (!Number.isInteger(v) || v < 0)) throw new Error(`[multisite] limits.${k} must be a non-negative integer`);
 	}

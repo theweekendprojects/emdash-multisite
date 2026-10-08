@@ -1,5 +1,5 @@
 /** Pure-logic checks for the org -> site hook: `node --no-warnings scripts/orgs.selfcheck.ts` */
-import { DEFAULT_LIMITS, createProblem, needsReconcile, parseCreatedOrg, slugProblem } from "../src/rules.ts";
+import { BUNDLED_THEME, DEFAULT_LIMITS, createProblem, effectiveTheme, needsReconcile, parseCreatedOrg, slugProblem, themeFromMetadata, themeProblem } from "../src/rules.ts";
 import { isSiteId } from "../src/rewrite.ts";
 
 let failed = 0;
@@ -22,8 +22,8 @@ const response = {
 	name: "Shape Check", slug: "shapecheck", id: "o1",
 	members: [{ userId: "u9", role: "member" }, { userId: "u1", role: "owner" }],
 };
-check("owner picked by role, not position", parseCreatedOrg(response), { slug: "shapecheck", name: "Shape Check", ownerUserId: "u1" });
-check("falls back to first member", parseCreatedOrg({ ...response, members: [{ userId: "u7" }] }), { slug: "shapecheck", name: "Shape Check", ownerUserId: "u7" });
+check("owner picked by role, not position", parseCreatedOrg(response), { slug: "shapecheck", name: "Shape Check", ownerUserId: "u1", theme: null });
+check("falls back to first member", parseCreatedOrg({ ...response, members: [{ userId: "u7" }] }), { slug: "shapecheck", name: "Shape Check", ownerUserId: "u7", theme: null });
 check("no members -> null", parseCreatedOrg({ ...response, members: [] }), null);
 check("no slug -> null", parseCreatedOrg({ ...response, slug: undefined }), null);
 check("garbage -> null", [parseCreatedOrg(null), parseCreatedOrg("x"), parseCreatedOrg(42)], [null, null, null]);
@@ -50,5 +50,20 @@ check("failed -> reconcile", needsReconcile({ status: "failed", startedAt: iso(1
 check("fresh provisioning -> leave alone", needsReconcile({ status: "provisioning", startedAt: iso(30_000) }, now), false);
 check("stale provisioning -> reconcile", needsReconcile({ status: "provisioning", startedAt: iso(10 * 60_000) }, now), true);
 check("ready -> never", needsReconcile({ status: "ready", startedAt: iso(1e9), readyAt: iso(1e9) }, now), false);
+
+// ---- themes ----
+const themes = { marketing: { name: "Marketing" }, blog: { name: "Blog" } };
+check("theme from object metadata", themeFromMetadata({ theme: "blog" }), "blog");
+check("theme from JSON-string metadata", themeFromMetadata('{"theme":"blog"}'), "blog");
+check("theme absent / garbage -> null", [themeFromMetadata(null), themeFromMetadata("{nope"), themeFromMetadata({ theme: 3 }), themeFromMetadata({})], [null, null, null, null]);
+check("known theme accepted", themeProblem("blog", themes), null);
+check("absent theme accepted (default applies)", [themeProblem(undefined, themes), themeProblem(null, themes)], [null, null]);
+check("unknown / malformed theme rejected", [themeProblem("nope", themes) !== null, themeProblem("../x", themes) !== null, themeProblem(7, themes) !== null, themeProblem("toString", themes) !== null], [true, true, true, true]);
+check("requested theme used", effectiveTheme("blog", themes), "blog");
+check("missing request -> first theme", effectiveTheme(null, themes), "marketing");
+check("explicit default wins", effectiveTheme(null, themes, "blog"), "blog");
+check("removed theme falls back", effectiveTheme("gone", themes, "blog"), "blog");
+check("no themes configured -> bundled seed", effectiveTheme("blog", undefined), BUNDLED_THEME);
+check("theme parsed from created org", parseCreatedOrg({ ...response, metadata: { theme: "blog" } })?.theme, "blog");
 console.log(failed ? `\n${failed} FAILED` : "\nall passed");
 process.exit(failed ? 1 : 0);
