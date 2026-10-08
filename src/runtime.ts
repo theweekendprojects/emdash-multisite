@@ -1,5 +1,5 @@
 import { Kysely, type Dialect } from "kysely";
-import { siteDialect } from "./dialect.ts";
+import { currentSite, siteDialect } from "./dialect.ts";
 import { activeSite, scopeState } from "./scope.ts";
 import { resolveSite, type SitesConfig } from "./sites.ts";
 
@@ -45,7 +45,13 @@ export function makeRuntime<InnerConfig>(createInner: (config: InnerConfig) => D
 		 */
 		createRequestScopedDb(opts: ScopedOpts): { db: Kysely<unknown>; commit: () => void } {
 			const config = opts.config as TenancyConfig<InnerConfig>;
-			const site = resolveSite(opts.url.hostname, config.sites);
+			// Core also asks for a scoped db with a fixed internal URL (`withEmDashRuntime`, cron
+			// events). That URL says nothing about the site, so use the site the outer middleware
+			// already set for this request; only a real request URL is resolved by hostname.
+			const site =
+				opts.url.hostname.endsWith(".emdash.internal") && currentSite()
+					? currentSite()!
+					: resolveSite(opts.url.hostname, config.sites);
 			let db = perSite.get(site);
 			if (!db) {
 				db = new Kysely<unknown>({ dialect: siteDialect(getInner(config), () => site, config.sites.primary) });
