@@ -14,9 +14,9 @@ import { applySeed } from "emdash";
 import { userSeed } from "virtual:emdash/seed";
 import { runAsSite } from "./dialect.ts";
 import { isSiteId } from "./rewrite.ts";
-import { BUNDLED_THEME, STALE_PROVISIONING_MS, effectiveTheme, needsReconcile, themeFromMetadata, type SiteStatus } from "./rules.ts";
+import { BUNDLED_THEME, STALE_PROVISIONING_MS, effectiveTheme, needsReconcile, themeFromMetadata, type ProvisionStep, type SiteStatus } from "./rules.ts";
 import type { SitesConfig } from "./sites.ts";
-import { controlDb, forgetSiteTheme, readOrgs, readSiteTheme, siteHasTables } from "./registry.ts";
+import { controlDb, forgetSiteTheme, readAllStates, readOrgs, readSiteTheme, siteHasTables } from "./registry.ts";
 import { scopeState } from "./scope.ts";
 import { provisionWith } from "./provision.ts";
 
@@ -65,7 +65,16 @@ export async function createSiteForOrg(
 ): Promise<void> {
 	const st = scopeState();
 	const startedAt = new Date().toISOString();
-	await writeStatus(org.slug, { status: "provisioning", startedAt });
+	await writeStatus(org.slug, { status: "provisioning", startedAt, step: "tables" });
+	const timings: Partial<Record<ProvisionStep, number>> = {};
+	let lap = Date.now();
+	/** Record how long the step that just ended took, and announce the next one. */
+	const done = async (ended: ProvisionStep, next?: ProvisionStep) => {
+		const now = Date.now();
+		timings[ended] = now - lap;
+		lap = now;
+		if (next) await writeStatus(org.slug, { status: "provisioning", startedAt, step: next });
+	};
 	try {
 		const db = controlDb();
 
@@ -76,6 +85,7 @@ export async function createSiteForOrg(
 
 		// 1. the site's tables (core migrations, run as the new site)
 		await provisionWith(db, org.slug);
+		await done("tables", "content");
 
 		// 1b. seed the new site with its theme's seed (collections + starter
 		//     content), or the host's bundled seed when no themes are configured.
@@ -89,6 +99,7 @@ export async function createSiteForOrg(
 			await runAsSite(org.slug, () => applySeed(db as any, seed as any, { includeContent: true, skipMediaDownload: true }));
 		}
 
+		await done("content", "identity");
 		// 2. read the owner's identity and platform auth policy from the control plane
 		const { owner, storage, inherited } = await runAsSite(st.primary, async () => {
 			const u = await sql<Record<string, unknown>>`SELECT * FROM users WHERE id = ${org.ownerUserId}`.execute(db);
@@ -127,7 +138,8 @@ export async function createSiteForOrg(
 				ON CONFLICT(name) DO UPDATE SET value = 'true'`.execute(db);
 		});
 
-		await writeStatus(org.slug, { status: "ready", startedAt, readyAt: new Date().toISOString() });
+		await done("identity");
+		await writeStatus(org.slug, { status: "ready", startedAt, readyAt: new Date().toISOString(), timings });
 	} catch (error) {
 		console.error(`[multisite] provisioning "${org.slug}" failed:`, error);
 		await writeStatus(org.slug, {
@@ -152,9 +164,12 @@ export function planFor(sites: SitesConfig, metadata: unknown): { theme: string;
  */
 export async function pendingReconcile(only?: string): Promise<string[]> {
 	const out: string[] = [];
+	// Suspended and deleted sites are left alone: provisioning would wake their runtime
+	// and re-create what a purge removed.
+	const inactive = await readAllStates();
 	for (const org of await readOrgs()) {
 		if (only && org.slug !== only) continue;
-		if (!org.ownerUserId || !isSiteId(org.slug)) continue;
+		if (!org.ownerUserId || !isSiteId(org.slug) || inactive.has(org.slug)) continue;
 		const status = await readStatus(org.slug);
 		if (!needsReconcile(status, Date.now())) continue;
 		if (!status && (await siteHasTables(org.slug))) {

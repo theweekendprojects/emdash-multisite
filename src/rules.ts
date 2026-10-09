@@ -23,8 +23,8 @@ export function slugProblem(slug: unknown, primary: string): string | null {
 }
 
 export type SiteStatus =
-	| { status: "provisioning"; startedAt: string }
-	| { status: "ready"; startedAt: string; readyAt: string }
+	| { status: "provisioning"; startedAt: string; step?: ProvisionStep }
+	| { status: "ready"; startedAt: string; readyAt: string; timings?: Partial<Record<ProvisionStep, number>> }
 	| { status: "failed"; startedAt: string; error: string };
 
 interface CreatedOrg {
@@ -34,6 +34,9 @@ interface CreatedOrg {
 	metadata?: unknown;
 	members?: Array<{ userId?: string; role?: string }>;
 }
+
+/** Provisioning phases, in order. Shown in the wizard and timed in the `ready` status. */
+export type ProvisionStep = "tables" | "content" | "identity";
 
 /** Pull the fields provisioning needs out of Better Auth's create-org response. */
 export function parseCreatedOrg(
@@ -100,10 +103,11 @@ export function createProblem(c: CreateContext, limits: Limits = DEFAULT_LIMITS)
 
 /**
  * A `provisioning` row older than this is a run that died. Work after a
- * response (`waitUntil`) gets ~30 s, and a theme with a lot of starter content
- * (the blog seed) can need more, so a live run is never older than ~40 s.
+ * response (`waitUntil`) gets ~30 s, so a live run is never older than ~35 s;
+ * the blog theme's first run (tables ~25 s, then ~40 s of content) is killed
+ * and finished by the next one.
  */
-export const STALE_PROVISIONING_MS = 60_000;
+export const STALE_PROVISIONING_MS = 40_000;
 
 /** Should provisioning run (again) for a site with this status? */
 export function needsReconcile(status: SiteStatus | null, now: number, staleMs = STALE_PROVISIONING_MS): boolean {

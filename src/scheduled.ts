@@ -14,6 +14,7 @@
  */
 import { runAsSite } from "./dialect.ts";
 import { sitesConfig } from "./config.ts";
+import { reconcile } from "./orgs.ts";
 import { purgeSite } from "./purge.ts";
 import { readAllStates, readAllStatuses, warm } from "./registry.ts";
 import { DEFAULT_DELETE_GRACE_DAYS, isPurgeDue } from "./rules.ts";
@@ -45,6 +46,13 @@ export function perSiteScheduled<T extends Scheduled>(base: T): T {
 					if (due) await runAsSite(scopeState().primary, () => purgeSite(due[0]));
 				} catch (error) {
 					console.error("[multisite] purge failed:", error);
+				}
+				// Finish one site whose provisioning died and that nobody is watching.
+				try {
+					const cfg = sitesConfig();
+					if (cfg) await runAsSite(scopeState().primary, () => reconcile(cfg));
+				} catch (error) {
+					console.error("[multisite] reconcile failed:", error);
 				}
 				for (const site of await sitesToSweep()) {
 					// The base handler hands its work to ctx.waitUntil; collect it so each
