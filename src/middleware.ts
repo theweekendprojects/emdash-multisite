@@ -15,7 +15,7 @@ import {
 	slugProblem,
 } from "./orgs.ts";
 import { isEmailVerified, readOrgs, readSiteTheme, warm } from "./registry.ts";
-import { DEFAULT_LIMITS, createProblem, needsReconcile, effectiveTheme, isThemeRouteRequest, isThemed, themeFromMetadata, themeProblem, themeRoute } from "./rules.ts";
+import { DEFAULT_LIMITS, csrfOk, createProblem, needsReconcile, effectiveTheme, isThemeRouteRequest, isThemed, themeFromMetadata, themeProblem, themeRoute } from "./rules.ts";
 import { isSiteId } from "./rewrite.ts";
 import { scopeState } from "./scope.ts";
 import { resolveSite, type SitesConfig } from "./sites.ts";
@@ -64,6 +64,10 @@ const STATUS_PREFIX = "/api/multisite/sites/";
 const RECONCILE_API = "/api/multisite/reconcile";
 const FLEET_API = "/api/multisite/fleet";
 const FLEET_PAGE = "/admin/fleet";
+const forbidden = () => new Response(JSON.stringify({ code: "CSRF", message: "Missing or cross-site request." }), {
+	status: 403,
+	headers: { "content-type": "application/json", "cache-control": "no-store" },
+});
 const html = (body: string, status: number) =>
 	new Response(body, { status, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
 
@@ -191,6 +195,7 @@ export async function onRequest(context: Ctx, next: Next): Promise<Response> {
 
 		// Retry one site's provisioning: its owner or staff. Idempotent, 202 = started.
 		if (method === "POST" && pathname.startsWith(STATUS_PREFIX) && pathname.endsWith("/retry")) {
+			if (!csrfOk(context.request.headers, context.url.origin)) return forbidden();
 			const slug = pathname.slice(STATUS_PREFIX.length, -"/retry".length);
 			if (!isSiteId(slug)) return json({ code: "NOT_FOUND" }, 404);
 			const userId = await sessionUserId(context);
@@ -205,6 +210,7 @@ export async function onRequest(context: Ctx, next: Next): Promise<Response> {
 
 		// Staff: re-run the next stuck site (failed, or provisioning that died). One per call; call again for the next.
 		if (method === "POST" && pathname === RECONCILE_API) {
+			if (!csrfOk(context.request.headers, context.url.origin)) return forbidden();
 			if (!(await isStaff(await sessionUserId(context)))) return json({ code: "FORBIDDEN" }, 403);
 			const slugs = await pendingReconcile();
 			if (slugs.length) after(async () => void (await runAsSite(site, () => reconcile(sites))));

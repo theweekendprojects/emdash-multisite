@@ -1,5 +1,5 @@
 /** Pure-logic checks for the org -> site hook: `node --no-warnings scripts/orgs.selfcheck.ts` */
-import { BUNDLED_THEME, DEFAULT_LIMITS, createProblem, effectiveTheme, needsReconcile, isThemeRouteRequest, isThemed, parseCreatedOrg, slugProblem, themeFromMetadata, themeProblem, themeRoute } from "../src/rules.ts";
+import { BUNDLED_THEME, DEFAULT_LIMITS, createProblem, csrfOk, effectiveTheme, needsReconcile, isThemeRouteRequest, isThemed, parseCreatedOrg, slugProblem, themeFromMetadata, themeProblem, themeRoute } from "../src/rules.ts";
 import { isSiteId } from "../src/rewrite.ts";
 
 let failed = 0;
@@ -77,5 +77,13 @@ check("route for root has no trailing slash", themeRoute("blog", "/"), "/theme-r
 check("route for nested path", themeRoute("blog", "/posts/hello"), "/theme-routes/blog/posts/hello");
 check("trailing slash dropped", themeRoute("portfolio", "/work/"), "/theme-routes/portfolio/work");
 check("direct subtree request detected", [isThemeRouteRequest("/theme-routes/blog"), isThemeRouteRequest("/theme-routes/blog/x"), isThemeRouteRequest("/theme-routesx"), isThemeRouteRequest("/posts")], [true, true, false, false]);
+
+// ---- csrf ----
+const hdr = (h: Record<string, string>) => ({ get: (n: string) => h[n.toLowerCase()] ?? null });
+check("custom header accepted", csrfOk(hdr({ "x-emdash-request": "1" }), "https://app.example.com"), true);
+check("same-origin Origin accepted", csrfOk(hdr({ origin: "https://app.example.com" }), "https://app.example.com"), true);
+check("cross-site Origin rejected", csrfOk(hdr({ origin: "https://evil.example" }), "https://app.example.com"), false);
+check("no header, no Origin rejected", csrfOk(hdr({}), "https://app.example.com"), false);
+check("header with wrong value rejected", csrfOk(hdr({ "x-emdash-request": "0" }), "https://app.example.com"), false);
 console.log(failed ? `\n${failed} FAILED` : "\nall passed");
 process.exit(failed ? 1 : 0);

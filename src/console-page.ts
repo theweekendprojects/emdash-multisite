@@ -68,7 +68,7 @@ const CLIENT_JS = String.raw`
         : '<div class="empty"><p>You have no sites yet.</p></div>');
     root.querySelectorAll("[data-retry]").forEach((b) => b.addEventListener("click", async () => {
       b.disabled = true; b.textContent = "Starting\u2026";
-      await getJson("/api/multisite/sites/" + b.dataset.retry + "/retry", { method: "POST" });
+      await getJson("/api/multisite/sites/" + b.dataset.retry + "/retry", { method: "POST", headers: { "x-emdash-request": "1" } });
       loadList();
     }));
     clearTimeout(timer);

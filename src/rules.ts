@@ -196,3 +196,19 @@ export function isThemeRouteRequest(pathname: string): boolean {
 export function themeRoute(theme: string, pathname: string): string {
 	return `${THEME_ROUTE_PREFIX}/${theme}${pathname === "/" ? "" : pathname.replace(/\/$/, "")}`;
 }
+
+// ---- CSRF ------------------------------------------------------------------
+
+/** Header every state-changing multisite API call must carry, as core requires for `/_emdash` APIs. */
+export const CSRF_HEADER = "x-emdash-request";
+
+/**
+ * A browser cannot send a custom header cross-site without a CORS preflight we
+ * never grant, so requiring it stops a forged form post or `fetch` from another
+ * origin from riding the user's session cookie. Also accept a same-origin
+ * `Origin` for clients that cannot add headers.
+ */
+export function csrfOk(headers: { get(name: string): string | null }, requestOrigin: string): boolean {
+	if (headers.get(CSRF_HEADER) === "1") return true;
+	return headers.get("origin") === requestOrigin;
+}
