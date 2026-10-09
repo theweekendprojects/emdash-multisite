@@ -396,7 +396,9 @@ nonce) and redirects to `https://<site>/_multisite/handoff?t=...`. The tenant ve
 accepts its nonce once, checks the user exists on that site, starts the user's session there and
 redirects to `/_emdash/admin`. Replayed, tampered, expired or wrong-site links get `403`. The
 signing key is created on first use and stored on the control plane (`multisite:handoff-secret`),
-so no environment secret is shared. This signs the **owner** in; it does not sync passwords (a
+so no environment secret is shared. Anyone who can read the database can read that key and sign in as any site's
+owner, so in production set a Worker secret instead: `wrangler secret put MULTISITE_SECRET` (32+ characters; it wins over
+the stored key). Set it before the first handoff or users with a link in flight get a "Link expired" page. This signs the **owner** in; it does not sync passwords (a
 password changed on the control plane does not change the tenant's copy; backlog OP-05).
 
 ## Scheduled work (cron) for every site

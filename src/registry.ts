@@ -7,6 +7,7 @@
 import { Kysely, sql } from "kysely";
 import { getDb } from "emdash/runtime";
 import { currentSite, siteDialect, runAsSite } from "./dialect.ts";
+import { platformEnv } from "./platform-env.ts";
 import { scopeState } from "./scope.ts";
 import { STATE_KEY_PREFIX, parseSiteState, type SiteState, type SiteStatus } from "./rules.ts";
 
@@ -162,11 +163,15 @@ const SECRET_KEY = Symbol.for("emdash-multisite:handoff-secret");
 /**
  * The key that signs handoff links. Generated once, stored on the control plane
  * (the only place that can mint a link), and read by tenants from there, so no
- * environment secret has to be shared between sites.
+ * environment secret has to be shared between sites. Stored in D1 it is readable by anyone
+ * who can read the database, so a Worker secret `MULTISITE_SECRET` (32+ characters) takes
+ * precedence when the host sets one: `wrangler secret put MULTISITE_SECRET`.
  */
 export async function handoffSecret(): Promise<string> {
 	const g = globalThis as Record<symbol, string | undefined>;
 	if (g[SECRET_KEY]) return g[SECRET_KEY]!;
+	const fromEnv = (await platformEnv())?.MULTISITE_SECRET;
+	if (typeof fromEnv === "string" && fromEnv.length >= 32) return (g[SECRET_KEY] = fromEnv);
 	const db = controlDb();
 	const read = () =>
 		runAsSite(scopeState().primary, () =>
