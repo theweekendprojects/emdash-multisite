@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  selfchecks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # The pure rules need no install: rules, URLs, console pages, handoff token, fleet view.
+      # The migration oracle (scripts/selfcheck.ts) and the cache tripwire need a real EmDash
+      # install and are run from a consuming site before an EmDash upgrade (see AGENTS.md).
+      - run: node --no-warnings scripts/orgs.selfcheck.ts
+      - run: node --no-warnings scripts/console.selfcheck.ts
+      - run: node --no-warnings scripts/handoff.selfcheck.ts
+      - run: node --no-warnings scripts/fleet.selfcheck.ts
