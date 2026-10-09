@@ -377,7 +377,7 @@ site `tpl-<theme>` (the `tpl-` prefix is reserved and hidden from the fleet). A 
 one D1 batch: the template's `CREATE` statements with the suffix swapped, then `INSERT ... SELECT` per table, then
 triggers; the owner, title and options are patched afterwards. The batch is atomic, so a failure leaves nothing.
 Without a complete template (or on the Node/SQLite host) creation falls back to migrate-and-seed. After an
-EmDash upgrade the template is stale until rebuilt (drop it, build again); sites created from it still run any newer
+EmDash upgrade the template is stale until rebuilt (`{"theme":"blog","rebuild":true}` drops it and builds again); sites created from it still run any newer
 migrations like any older site. D1 only. Script: `multisite-smoke/scripts/build-templates.mjs`.
 
 ## Media (uploads)
@@ -496,8 +496,8 @@ idempotent and resumes after a partial run. Not supported: renaming a site (the 
 
 - **One shared D1 is single-threaded.** One busy site can slow all. Shard across multiple D1s (by
   site) when a DB gets hot.
-- **Time Travel restores the whole DB** — there is no per-site rollback. For per-site backups, do a
-  per-site D1→R2 export.
+- **Time Travel restores the whole DB** — it rewinds every site. Use the per-site backup and restore
+  (see "Backups and restore") when only one site is hurt.
 - Every EmDash upgrade migrates **every** site's tables (fleet migration, inside one DB).
 - Billing is per account (rows read/written), so N sites in one DB cost the same as N DBs. Bots on
   many sites multiply cost — gate signup.

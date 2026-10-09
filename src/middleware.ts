@@ -431,16 +431,16 @@ export async function onRequest(context: Ctx, next: Next): Promise<Response> {
 				return json({ result }, status);
 			});
 		}
-		// Staff: build the template site of ONE theme (`{ theme }`). Runs inside the request, not in the
+		// Staff: build the template site of ONE theme (`{ theme }`; `rebuild: true` replaces an existing one). Runs inside the request, not in the
 		// background: it takes ~70 s, longer than the ~30 s a background task gets. New sites of that theme
 		// are then cloned from it (seconds) instead of migrated and seeded.
 		if (method === "POST" && pathname === TEMPLATES_API) {
 			if (!csrfOk(context.request.headers, context.url.origin)) return forbidden();
 			if (!(await isStaff(await sessionUserId(context)))) return json({ code: "FORBIDDEN" }, 403);
-			const body = (await context.request.json().catch(() => null)) as { theme?: unknown } | null;
+			const body = (await context.request.json().catch(() => null)) as { theme?: unknown; rebuild?: unknown } | null;
 			const theme = typeof body?.theme === "string" ? body.theme : "";
 			const started = Date.now();
-			const result = await runAsSite(site, () => buildTemplate(sites, theme));
+			const result = await runAsSite(site, () => buildTemplate(sites, theme, { rebuild: body?.rebuild === true }));
 			return json({ theme, result, ms: Date.now() - started }, result === "unknown-theme" ? 400 : 200);
 		}
 

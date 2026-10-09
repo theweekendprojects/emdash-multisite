@@ -20,6 +20,7 @@ import { controlDb, forgetSiteTheme, readAllStates, readOrgs, readSiteTheme, sit
 import { scopeState } from "./scope.ts";
 import { provisionWith } from "./provision.ts";
 import { cloneTemplate, hasTemplate } from "./clone-run.ts";
+import { dropSiteTables } from "./purge.ts";
 
 export { ORG_CREATE_PATH, RESERVED_SITE_IDS, parseCreatedOrg, slugProblem, type SiteStatus } from "./rules.ts";
 
@@ -79,14 +80,19 @@ async function buildSchemaAndSeed(
 /**
  * Build the template site for a theme (`tpl-<theme>`): the pre-built copy that new
  * sites are cloned from. Slow (the full migrate-and-seed), so run it once, not per
- * customer. It has no owner and no organization. Refuses to overwrite.
- * ponytail: rebuilding after an EmDash upgrade needs a drop first (OP-22).
+ * customer. It has no owner and no organization. Refuses to overwrite unless `rebuild` is set, which
+ * drops the template first (after an EmDash upgrade or a theme seed change). New sites made while it is
+ * being rebuilt take the slow path.
  */
-export async function buildTemplate(sites: SitesConfig, theme: string): Promise<"built" | "exists" | "unknown-theme"> {
+export async function buildTemplate(sites: SitesConfig, theme: string, opts: { rebuild?: boolean } = {}): Promise<"built" | "exists" | "unknown-theme"> {
 	const seed = sites.themes?.[theme]?.seed;
 	if (!seed) return "unknown-theme";
-	if (await hasTemplate(theme)) return "exists";
 	const slug = templateId(theme);
+	if (await hasTemplate(theme)) {
+		if (!opts.rebuild) return "exists";
+		const dropped = await runAsSite(scopeState().primary, () => dropSiteTables(slug));
+		if (dropped.remaining) throw new Error(`[multisite] could not clear ${dropped.remaining} tables of ${slug}`);
+	}
 	await buildSchemaAndSeed(controlDb(), slug, seed);
 	await runAsSite(slug, async () => {
 		await sql`INSERT INTO options (name, value) VALUES ('multisite:theme', ${JSON.stringify(theme)})
