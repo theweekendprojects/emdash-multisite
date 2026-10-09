@@ -1,4 +1,4 @@
-import { clonePlan, type MasterRow } from "../src/clone.ts";
+import { clonePlan, insertStatements, retarget, type MasterRow } from "../src/clone.ts";
 let failed = 0;
 const check = (name: string, got: unknown, want: unknown) => {
 	const ok = JSON.stringify(got) === JSON.stringify(want);
@@ -29,5 +29,11 @@ check("copy is INSERT ... SELECT per table", p.copy, [
 	'INSERT INTO "fts$acme" SELECT * FROM "fts$tpl"',
 ]);
 check("triggers come last and are swapped", p.triggers, ['CREATE TRIGGER "t$acme" AFTER INSERT ON "posts$acme" BEGIN SELECT 1; END']);
+check("tables to export", p.tables, ["posts$tpl", "users$tpl", "fts$tpl"]);
+check("insert statements: grouped by rows", insertStatements("t$x", ["a", "b"], ["(1,'x')", "(2,'y')", "(3,'z')"], 2), ['INSERT INTO "t$x" ("a", "b") VALUES (1,\'x\'), (2,\'y\')', 'INSERT INTO "t$x" ("a", "b") VALUES (3,\'z\')']);
+check("insert statements: grouped by size, none lost", insertStatements("t", ["a"], ["(1)", "(2)", "(3)"], 100, 40).length > 1 && insertStatements("t", ["a"], ["(1)", "(2)", "(3)"], 100, 40).join(",").match(/\(\d\)/g)?.length === 3, true);
+check("insert statements: no rows, no statements", insertStatements("t", ["a"], []), []);
+check("retarget: schema swaps everywhere", retarget('CREATE INDEX "i$a" ON "t$a"(x)', "a", "b"), 'CREATE INDEX "i$b" ON "t$b"(x)');
+check("retarget: insert swaps only the table name", retarget('INSERT INTO "t$a" ("c") VALUES (\'costs $a\')', "a", "b"), 'INSERT INTO "t$b" ("c") VALUES (\'costs $a\')');
 console.log(failed ? `\n${failed} FAILED` : "\nall passed");
 process.exit(failed ? 1 : 0);

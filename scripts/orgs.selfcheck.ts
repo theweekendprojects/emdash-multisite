@@ -1,5 +1,5 @@
 /** Pure-logic checks for the org -> site hook: `node --no-warnings scripts/orgs.selfcheck.ts` */
-import { lostLimitRace, emailDomainBlocked, BUNDLED_THEME, mediaKey, unmediaKey, DEFAULT_LIMITS, createProblem, csrfOk, isPurgeDue, isTableOfSite, parseSiteState, transition, isLocalPath, loginEntryRedirect, seedCollections, switchSummary, effectiveTheme, needsReconcile, isThemeRouteRequest, isThemed, parseCreatedOrg, slugProblem, themeFromMetadata, themeProblem, themeRoute } from "../src/rules.ts";
+import { backupDue, backupKey, backupPrefix, lostLimitRace, emailDomainBlocked, BUNDLED_THEME, mediaKey, unmediaKey, DEFAULT_LIMITS, createProblem, csrfOk, isPurgeDue, isTableOfSite, parseSiteState, transition, isLocalPath, loginEntryRedirect, seedCollections, switchSummary, effectiveTheme, needsReconcile, isThemeRouteRequest, isThemed, parseCreatedOrg, slugProblem, themeFromMetadata, themeProblem, themeRoute } from "../src/rules.ts";
 import { isSiteId } from "../src/rewrite.ts";
 
 let failed = 0;
@@ -141,5 +141,7 @@ check("race: first three win, the rest lose (limit 3)", raced.map((o) => lostLim
 check("race: same timestamp ranks by slug, same answer for every caller", ["x", "y"].map((x) => lostLimitRace(x, [mk("x", "u1", "t"), mk("y", "u1", "t")], new Set(), { sitesPerUser: 1 })), [false, true]);
 check("race: deleted sites and other owners do not count", lostLimitRace("c", [mk("a", "u1", "1"), mk("b", "u1", "2"), mk("c", "u1", "3"), mk("z", "u2", "0")], new Set(["a"]), { sitesPerUser: 2 }), false);
 check("race: platform cap", [lostLimitRace("a", [mk("a", "u1", "1"), mk("b", "u2", "2")], new Set(), { totalSites: 1 }), lostLimitRace("b", [mk("a", "u1", "1"), mk("b", "u2", "2")], new Set(), { totalSites: 1 })], [false, true]);
+check("backup keys sort by time and stay inside the site's folder", [backupKey("acme", "2026-10-09T10:00:00.000Z"), backupKey("acme", "2026-10-09T10:00:00.000Z", "pre-restore"), backupPrefix("acme")], ["_backups/acme/2026-10-09T10:00:00.000Z.json", "_backups/acme/2026-10-09T10:00:00.000Z-pre-restore.json", "_backups/acme/"]);
+check("backup due: none yet, a day old, fresh", [backupDue(undefined, t0), backupDue("2026-09-30T00:00:00Z", t0), backupDue("2026-09-30T12:00:00Z", t0)], [true, true, false]);
 console.log(failed ? `\n${failed} FAILED` : "\nall passed");
 process.exit(failed ? 1 : 0);

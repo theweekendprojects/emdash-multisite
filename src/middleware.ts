@@ -24,11 +24,13 @@ import {
 	readOrgs,
 	readSiteState,
 	readSiteTheme,
+	siteHasTables,
 	siteHasUser,
 	warm,
 	writeSiteState,
 } from "./registry.ts";
 import { overLimit } from "./abuse.ts";
+import { backupSite, listBackups, restoreSite } from "./backup.ts";
 import { sitesConfig } from "./config.ts";
 import { signHandoff, verifyHandoff } from "./handoff.ts";
 import { purgeSite } from "./purge.ts";
@@ -317,7 +319,7 @@ export async function onRequest(context: Ctx, next: Next): Promise<Response> {
 			}
 		}
 
-		if (method === "GET" && pathname.startsWith(STATUS_PREFIX)) {
+		if (method === "GET" && pathname.startsWith(STATUS_PREFIX) && !pathname.slice(STATUS_PREFIX.length).includes("/")) {
 			const slug = pathname.slice(STATUS_PREFIX.length);
 			if (!isSiteId(slug)) return json({ code: "NOT_FOUND" }, 404);
 			const status = await readStatus(slug);
@@ -412,6 +414,23 @@ export async function onRequest(context: Ctx, next: Next): Promise<Response> {
 			return json({ pending: slugs, started: slugs[0] ?? null }, 202);
 		}
 
+		// Staff: back up, list backups of, and restore one site (see backup.ts). Run inside the request.
+		const backupApi = /^\/api\/multisite\/sites\/([a-z0-9-]+)\/(backup|backups|restore)$/.exec(pathname);
+		if (backupApi && ((method === "GET" && backupApi[2] === "backups") || (method === "POST" && backupApi[2] !== "backups"))) {
+			if (method === "POST" && !csrfOk(context.request.headers, context.url.origin)) return forbidden();
+			if (!(await isStaff(await sessionUserId(context)))) return json({ code: "FORBIDDEN" }, 403);
+			const slug = backupApi[1]!;
+			if (slug === sites.primary || !(await siteHasTables(slug))) return json({ code: "NOT_FOUND" }, 404);
+			return runAsSite(site, async () => {
+				if (backupApi[2] === "backups") return json({ backups: await listBackups(slug) }, 200);
+				if (backupApi[2] === "backup") return json(await backupSite(slug), 201);
+				const body = (await context.request.json().catch(() => null)) as { key?: unknown; replace?: unknown } | null;
+				if (typeof body?.key !== "string") return json({ code: "BAD_REQUEST" }, 400);
+				const result = await restoreSite(slug, body.key, { replace: body.replace === true });
+				const status = { restored: 200, "not-found": 404, "site-has-tables": 409, "bad-backup": 422 }[result];
+				return json({ result }, status);
+			});
+		}
 		// Staff: build the template site of ONE theme (`{ theme }`). Runs inside the request, not in the
 		// background: it takes ~70 s, longer than the ~30 s a background task gets. New sites of that theme
 		// are then cloned from it (seconds) instead of migrated and seeded.

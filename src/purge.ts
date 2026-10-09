@@ -8,7 +8,7 @@ import { runAsSite } from "./dialect.ts";
 import { controlDb, forgetSiteState, readSiteState } from "./registry.ts";
 import { isTableOfSite, STATE_KEY_PREFIX } from "./rules.ts";
 import { scopeState } from "./scope.ts";
-import { purgeSiteMedia } from "./storage.ts";
+import { purgeSiteMedia } from "./media-bucket.ts";
 
 const quote = (name: string) => `"${name.replaceAll('"', '""')}"`;
 const ORG_COLLECTIONS = ["members", "invitations", "teams", "teamMembers", "organizationRoles"];
@@ -35,41 +35,50 @@ async function dropTable(db: ReturnType<typeof controlDb>, slug: string, name: s
 	}
 }
 
+/**
+ * Drop every table of a site. Must run as the primary (physical table names, no rewriting).
+ * Also used before a restore replaces a site.
+ */
+export async function dropSiteTables(slug: string): Promise<{ dropped: number; remaining: number }> {
+	const db = controlDb();
+	// Tables of this site that exist right now. Listed again on every pass: dropping a table
+	// can remove others (full-text shadows) and the stand-in below can create one.
+	const list = async () =>
+		(await sql<{ name: string }>`SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE '%$%'`.execute(db)).rows
+			.map((r) => r.name)
+			.filter((n) => isTableOfSite(n, slug));
+	let dropped = 0;
+	let todo = await list();
+	// Foreign keys point child -> parent, so a parent cannot be dropped while children
+	// (with rows, in a cloned site) exist. Keep making passes until nothing more drops.
+	for (let pass = 0; pass < 6 && todo.length; pass++) {
+		let progress = false;
+		for (const name of todo) {
+			// A full-text drop removes its shadow tables too, so one may already be gone.
+			const stillThere = await sql<{ n: number }>`SELECT COUNT(*) AS n FROM sqlite_master WHERE name = ${name}`.execute(db);
+			if (!Number(stillThere.rows[0]?.n)) continue;
+			try {
+				await dropTable(db, slug, name);
+				dropped++;
+				progress = true;
+			} catch {
+				// left for the next pass
+			}
+		}
+		todo = await list();
+		if (!progress) break;
+	}
+	return { dropped, remaining: todo.length };
+}
 export async function purgeSite(slug: string): Promise<{ dropped: number; remaining: number }> {
 	if ((await readSiteState(slug))?.state !== "deleted") throw new Error(`[multisite] refusing to purge "${slug}": not deleted`);
 	const db = controlDb();
 	const primary = scopeState().primary;
 
 	return runAsSite(primary, async () => {
-		// Tables of this site that exist right now. Listed again on every pass: dropping a table
-		// can remove others (full-text shadows) and the stand-in below can create one.
-		const list = async () =>
-			(await sql<{ name: string }>`SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE '%$%'`.execute(db)).rows
-				.map((r) => r.name)
-				.filter((n) => isTableOfSite(n, slug));
-		let dropped = 0;
-		let todo = await list();
-		// Foreign keys point child -> parent, so a parent cannot be dropped while children
-		// (with rows, in a cloned site) exist. Keep making passes until nothing more drops.
-		for (let pass = 0; pass < 6 && todo.length; pass++) {
-			let progress = false;
-			for (const name of todo) {
-				// A full-text drop removes its shadow tables too, so one may already be gone.
-				const stillThere = await sql<{ n: number }>`SELECT COUNT(*) AS n FROM sqlite_master WHERE name = ${name}`.execute(db);
-				if (!Number(stillThere.rows[0]?.n)) continue;
-				try {
-					await dropTable(db, slug, name);
-					dropped++;
-					progress = true;
-				} catch {
-					// left for the next pass
-				}
-			}
-			todo = await list();
-			if (!progress) break;
-		}
-		if (todo.length) return { dropped, remaining: todo.length };
-		// Uploaded files (shared bucket, one key prefix per site).
+		const { dropped, remaining } = await dropSiteTables(slug);
+		if (remaining) return { dropped, remaining };
+		// Uploaded files and backups (shared bucket, one key prefix per site).
 		await purgeSiteMedia(slug);
 		// Organization and its members/invitations/teams on the control plane.
 		const orgs = await sql<{ id: string; data: string }>`SELECT id, data FROM _plugin_storage WHERE collection = 'organizations'`.execute(db);

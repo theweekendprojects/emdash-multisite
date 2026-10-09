@@ -170,6 +170,17 @@ export function lostLimitRace(
 	return limits.totalSites !== undefined && live.indexOf(me) >= limits.totalSites;
 }
 
+// ---- backups ---------------------------------------------------------------
+
+/** Backups kept per site; older ones are deleted when a new one is saved. */
+export const BACKUP_KEEP = 7;
+export const BACKUP_EVERY_MS = 24 * 3_600_000;
+/** Folder of a site's backups in the media bucket. Site ids start with a letter or digit, so `_backups` never collides with a site's media prefix. */
+export const backupPrefix = (slug: string): string => `_backups/${slug}/`;
+export const backupKey = (slug: string, iso: string, tag?: string): string => `${backupPrefix(slug)}${iso}${tag ? `-${tag}` : ""}.json`;
+/** A backup is due when there is none yet or the last one is a day old. */
+export const backupDue = (lastIso: string | undefined, now: number): boolean => !lastIso || now - Date.parse(lastIso) >= BACKUP_EVERY_MS;
+
 // ---- recovery --------------------------------------------------------------
 
 /**

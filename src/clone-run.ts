@@ -12,12 +12,16 @@ import { d1Binding } from "./config.ts";
 import { platformEnv } from "./platform-env.ts";
 import { templateId } from "./rules.ts";
 
-interface D1 {
-	prepare(sql: string): { bind(...v: unknown[]): unknown; all<T>(): Promise<{ results: T[] }> };
-	batch(statements: unknown[]): Promise<unknown>;
+export interface D1Statement {
+	bind(...v: unknown[]): D1Statement;
+	all<T = unknown>(): Promise<{ results: T[] }>;
+}
+export interface D1 {
+	prepare(sql: string): D1Statement;
+	batch(statements: D1Statement[]): Promise<Array<{ results: unknown[] }>>;
 }
 
-const d1 = async (): Promise<D1 | undefined> => {
+export const d1 = async (): Promise<D1 | undefined> => {
 	const binding = d1Binding();
 	return binding ? ((await platformEnv())?.[binding] as D1 | undefined) : undefined;
 };
@@ -30,7 +34,7 @@ export async function hasTemplate(theme: string): Promise<boolean> {
 	const db = await d1();
 	if (!db) return false;
 	const table = `options$${templateId(theme)}`;
-	const q = (sql: string, ...v: unknown[]) => (db.prepare(sql).bind(...v) as ReturnType<D1["prepare"]>).all();
+	const q = (sql: string, ...v: unknown[]) => db.prepare(sql).bind(...v).all();
 	if (!(await q("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?", table)).results.length) return false;
 	return (await q(`SELECT 1 FROM "${table}" WHERE name = 'multisite:theme'`)).results.length > 0;
 }
@@ -44,7 +48,7 @@ export async function cloneTemplate(theme: string, to: string): Promise<boolean>
 	const db = await d1();
 	if (!db || !(await hasTemplate(theme))) return false;
 	const from = templateId(theme);
-	const { results } = await (db.prepare("SELECT type, name, sql FROM sqlite_master WHERE instr(name, ?) > 0").bind(`$${from}`) as ReturnType<D1["prepare"]>).all<MasterRow>();
+	const { results } = await db.prepare("SELECT type, name, sql FROM sqlite_master WHERE instr(name, ?) > 0").bind(`$${from}`).all<MasterRow>();
 	const plan = clonePlan(results, from, to);
 	// Foreign keys are checked at commit, so copy order between tables does not matter.
 	const statements = ["PRAGMA defer_foreign_keys = ON", ...plan.schema, ...plan.copy, ...plan.triggers];

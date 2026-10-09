@@ -11,10 +11,6 @@
  *   storage: { ...r2({ binding: "MEDIA" }), entrypoint: "emdash-multisite/storage" }
  */
 import { sql } from "kysely";
-// @ts-ignore - provided by the Workers runtime
-import { env } from "cloudflare:workers";
-// @ts-ignore - virtual module provided by EmDash's integration
-import emdashConfig from "virtual:emdash/config";
 import { createStorage as createR2 } from "@emdash-cms/cloudflare/storage/r2";
 import { EmDashStorageError, type Storage } from "emdash";
 import { currentSite } from "./dialect.ts";
@@ -58,24 +54,4 @@ export function createStorage(config: Record<string, unknown>): Storage {
 		// A configured CDN `publicUrl` has no such scoping, so its URLs carry the prefix.
 		getPublicUrl,
 	};
-}
-
-/** Delete every object of a site (used on purge). Returns the number removed; 0 when no R2 storage is configured. */
-interface Bucket {
-	list(o: object): Promise<{ objects: { key: string }[]; truncated: boolean; cursor?: string }>;
-	delete(keys: string[]): Promise<void>;
-}
-
-export async function purgeSiteMedia(slug: string): Promise<number> {
-	const binding = (emdashConfig as { storage?: { config?: { binding?: string } } }).storage?.config?.binding;
-	const bucket = binding ? ((env as Record<string, unknown>)[binding] as Bucket | undefined) : undefined;
-	if (!bucket) return 0;
-	let n = 0, cursor: string | undefined;
-	do {
-		const page = await bucket.list({ prefix: mediaKey(slug, ""), cursor, limit: 1000 });
-		if (page.objects.length) await bucket.delete(page.objects.map((o) => o.key));
-		n += page.objects.length;
-		cursor = page.truncated ? page.cursor : undefined;
-	} while (cursor);
-	return n;
 }

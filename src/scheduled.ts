@@ -15,9 +15,11 @@
 import { runAsSite } from "./dialect.ts";
 import { sitesConfig } from "./config.ts";
 import { reconcile } from "./orgs.ts";
+import { backupSite, readLastBackups } from "./backup.ts";
+import { mediaBucket } from "./media-bucket.ts";
 import { purgeSite } from "./purge.ts";
 import { readAllStates, readAllStatuses, warm } from "./registry.ts";
-import { DEFAULT_DELETE_GRACE_DAYS, isPurgeDue } from "./rules.ts";
+import { DEFAULT_DELETE_GRACE_DAYS, backupDue, isPurgeDue } from "./rules.ts";
 import { scopeState } from "./scope.ts";
 
 type Scheduled = (controller: unknown, env: unknown, ctx: { waitUntil(p: Promise<unknown>): void }) => unknown;
@@ -46,6 +48,16 @@ export function perSiteScheduled<T extends Scheduled>(base: T): T {
 					if (due) await runAsSite(scopeState().primary, () => purgeSite(due[0]));
 				} catch (error) {
 					console.error("[multisite] purge failed:", error);
+				}
+				// Back up at most one ready site that has no backup from the last day. Skipped without R2.
+				try {
+					const last = await readLastBackups();
+					const inactive = await readAllStates();
+					const due = [...(await readAllStatuses())]
+						.find(([slug, st]) => st.status === "ready" && !inactive.has(slug) && backupDue(last.get(slug), Date.now()));
+					if (due && (await mediaBucket())) await runAsSite(scopeState().primary, () => backupSite(due[0]));
+				} catch (error) {
+					console.error("[multisite] backup failed:", error);
 				}
 				// Finish one site whose provisioning died and that nobody is watching.
 				try {

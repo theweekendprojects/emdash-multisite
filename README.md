@@ -342,6 +342,20 @@ With no `themes` configured nothing is rewritten and the host's own pages serve 
 Seeds are applied with `skipMediaDownload` (downloading images would also eat the provisioning time
 budget), so seed images are skipped.
 
+## Backups and restore (per site)
+D1 Time Travel restores the whole database, so one damaged site needs its own copy. A backup is one JSON file in the
+media bucket at `_backups/<site>/<time>.json`: the site's `CREATE` statements plus its rows as multi-row `INSERT`s (values
+written by SQLite's `quote()`, so blobs and NULLs survive). The cron backs up at most one ready site per tick that has
+no backup from the last day, and keeps the newest 7 per site. Staff routes (CSRF header, run inside the request):
+- `POST /api/multisite/sites/<slug>/backup` take one now.
+- `GET  /api/multisite/sites/<slug>/backups` list keys, oldest first.
+- `POST /api/multisite/sites/<slug>/restore {"key": "...", "replace": true}` rebuild the site from a backup. Without
+  `replace` the site must have no tables (409). With it the current state is backed up first (`-pre-restore`), then the
+  tables are dropped and rebuilt in one atomic D1 batch, so a bad restore can itself be undone.
+Not included: the organization, state, theme and status records (they stay as they are), and the control plane (primary
+site; use Time Travel). Warm isolates may serve cached site settings for a short while after a restore. Purging a site
+deletes its backups too, so a deleted customer's data does not outlive the grace period. Needs the D1 and R2 bindings.
+
 ## Abuse controls
 Sign-up is open, and every account can create sites (~90 D1 tables each), so there are four brakes:
 - **Throwaway mail**: sign-up with a disposable-mail domain is refused (`EMAIL_DOMAIN_BLOCKED`, 400). A built-in
