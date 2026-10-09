@@ -19,6 +19,9 @@ Better Auth **organization** provisions a site and its **slug** becomes the subd
 - [The control-plane site vs tenant sites](#the-control-plane-site-vs-tenant-sites)
 - [Routing / subdomains](#routing--subdomains)
 - [Provisioning a site](#provisioning-a-site)
+- [The customer console](#the-customer-console)
+- [Themes](#themes)
+- [Creating sites, limits and recovery](#creating-sites-limits-and-recovery)
 - [Local development](#local-development)
 - [Deploy to Cloudflare](#deploy-to-cloudflare)
 - [Tests / self-checks](#tests--self-checks)
@@ -238,7 +241,11 @@ Run with Node ≥ 22.18 (e.g. `~/.nvm/versions/node/v22.23.2/bin/node --no-warni
 - `scripts/caches.selfcheck.ts <path-to-node_modules>` — the **cache tripwire**: scans `emdash` +
   all `@emdash-cms/*` and fails if any EmDash cache key is unclassified or a patched declaration
   changed shape. **Run this on every EmDash upgrade.**
-- `scripts/orgs.selfcheck.ts` — slug validation + org-response parsing (no deps).
+- `scripts/orgs.selfcheck.ts` — slug validation, org-response parsing, creation limits, reconcile
+  rules, theme resolution and theme routing paths (no deps; pure rules in `src/rules.ts`).
+- `scripts/console.selfcheck.ts` — parses the console pages' embedded client script (a syntax slip
+  only shows in the browser otherwise) and checks site URL rules.
+- `scripts/fleet.selfcheck.ts` — fleet view rules.
 
 ## Upgrading EmDash (important)
 
