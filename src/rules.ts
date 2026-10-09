@@ -212,3 +212,23 @@ export function csrfOk(headers: { get(name: string): string | null }, requestOri
 	if (headers.get(CSRF_HEADER) === "1") return true;
 	return headers.get("origin") === requestOrigin;
 }
+
+// ---- theme switching -------------------------------------------------------
+
+/** Collection slugs a theme's seed defines. */
+export function seedCollections(seed: unknown): string[] {
+	const cols = (seed as { collections?: Array<{ slug?: unknown }> } | null)?.collections;
+	return Array.isArray(cols) ? cols.flatMap((c) => (typeof c?.slug === "string" ? [c.slug] : [])) : [];
+}
+
+/**
+ * What switching `from` -> `to` does to the data model. Switching never deletes:
+ * `adds` are collections the target needs (created empty, or with sample content
+ * if asked), `hides` are collections the target does not display (content stays
+ * and comes back if the owner switches back).
+ */
+export function switchSummary(themes: Themes, from: string, to: string): { adds: string[]; hides: string[] } {
+	const a = seedCollections(themes[from]?.seed);
+	const b = seedCollections(themes[to]?.seed);
+	return { adds: b.filter((c) => !a.includes(c)), hides: a.filter((c) => !b.includes(c)) };
+}

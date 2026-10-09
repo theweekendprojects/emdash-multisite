@@ -35,17 +35,19 @@ const CLIENT_JS = String.raw`
   };
 
   // ---------- My sites ----------
-  const siteCard = (s) => {
+  const siteCard = (s, staff, themed) => {
     const open = s.url && s.status === "ready"
       ? '<a class="btn" href="' + esc(s.url) + '" target="_blank" rel="noopener">Open site</a>' +
         '<a class="btn primary" href="' + esc(s.adminUrl) + '" target="_blank" rel="noopener">Open admin</a>'
       : "";
     const noUrl = s.status === "ready" && !s.url ? '<p class="muted">No public address is configured for this site yet.</p>' : "";
     const err = s.error ? '<p class="errtext">' + esc(s.error) + '</p>' : "";
+    const appearance = s.status === "ready" && (s.role === "owner" || staff) && themed
+      ? '<a class="btn" href="/sites/' + esc(s.slug) + '/appearance">Appearance</a>' : "";
     const retry = s.canRetry ? '<button class="btn" data-retry="' + esc(s.slug) + '">Retry setup</button>' : "";
     return '<article class="card"><div class="row"><h2>' + esc(s.name) + '</h2>' + status(s.status) + '</div>' +
       '<p class="muted"><code>' + esc(s.slug) + '</code> \u00b7 ' + esc(s.role) + (s.theme ? ' \u00b7 ' + esc(s.theme) : '') + '</p>' + err + noUrl +
-      '<div class="actions">' + open + retry + '</div></article>';
+      '<div class="actions">' + open + appearance + retry + '</div></article>';
   };
 
   let timer = null;
@@ -64,7 +66,7 @@ const CLIENT_JS = String.raw`
     root.innerHTML = banner +
       '<div class="row head"><h1>My sites</h1><div>' + create + '</div></div>' +
       (me.sites.length
-        ? '<div class="grid">' + me.sites.map(siteCard).join("") + '</div>'
+        ? '<div class="grid">' + me.sites.map((s) => siteCard(s, me.staff, me.themed)).join("") + '</div>'
         : '<div class="empty"><p>You have no sites yet.</p></div>');
     root.querySelectorAll("[data-retry]").forEach((b) => b.addEventListener("click", async () => {
       b.disabled = true; b.textContent = "Starting\u2026";
@@ -177,7 +179,53 @@ const CLIENT_JS = String.raw`
     tick();
   };
 
-  (mode === "new" ? loadWizard : loadList)();
+  // ---------- Appearance (switch theme) ----------
+  const loadAppearance = async () => {
+    const slug = document.body.dataset.slug;
+    const r = await getJson("/api/multisite/sites/" + slug + "/appearance");
+    if (r.status === 401) return toLogin();
+    const me = (await getJson("/api/multisite/me")).body || {};
+    renderNav(me);
+    if (!r.ok) { root.innerHTML = '<div class="err">You cannot change this site\u2019s appearance.</div><p><a href="/sites">Back to my sites</a></p>'; return; }
+    const a = r.body;
+    const list = (xs) => xs.map((x) => '<code>' + esc(x) + '</code>').join(", ");
+    root.innerHTML =
+      '<h1>Appearance \u00b7 ' + esc(a.name) + '</h1>' +
+      '<p class="muted">Switching keeps all of your content. Anything the new theme does not show is hidden, and comes back if you switch back.</p>' +
+      '<form id="f"><fieldset class="themes"><legend>Theme</legend>' + a.themes.map((t) =>
+        '<label class="theme"><input type="radio" name="theme" value="' + esc(t.id) + '"' + (t.current ? " checked" : "") + '>' +
+        '<span><strong>' + esc(t.name) + (t.current ? ' (current)' : '') + '</strong><small>' + esc(t.description) + '</small>' +
+        (!t.current && t.adds.length ? '<small>Adds: ' + list(t.adds) + '</small>' : '') +
+        (!t.current && t.hides.length ? '<small>Hides: ' + list(t.hides) + '</small>' : '') + '</span></label>').join("") + '</fieldset>' +
+      '<label class="check"><input type="checkbox" id="sample"> Add sample content for any new sections</label>' +
+      '<p id="msg" class="muted" role="status" aria-live="polite"></p>' +
+      '<button class="btn primary" id="go" type="submit" disabled>Switch theme</button> <a class="btn" href="/sites">Back</a></form>';
+    const go = document.getElementById("go"), msg = document.getElementById("msg");
+    const chosen = () => (document.querySelector('input[name="theme"]:checked') || {}).value;
+    root.querySelectorAll('input[name="theme"]').forEach((i) => i.addEventListener("change", () => { go.disabled = chosen() === a.current; }));
+    document.getElementById("f").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const to = chosen();
+      if (!to || to === a.current) return;
+      go.disabled = true; msg.className = "muted"; msg.textContent = "Switching\u2026";
+      const res = await getJson("/api/multisite/sites/" + slug + "/theme", {
+        method: "POST", headers: { "content-type": "application/json", "x-emdash-request": "1" },
+        body: JSON.stringify({ theme: to, includeContent: document.getElementById("sample").checked }),
+      });
+      if (!res.ok) { msg.className = "errtext"; msg.textContent = (res.body && (res.body.message || res.body.code)) || "Could not switch."; go.disabled = false; return; }
+      let tries = 0;
+      const poll = async () => {
+        tries++;
+        const p = await getJson("/api/multisite/sites/" + slug + "/appearance");
+        if (p.ok && p.body.current === to) { loadAppearance(); return; }
+        if (tries > 40) { msg.className = "errtext"; msg.textContent = "This is taking longer than expected. Check back in a minute."; return; }
+        setTimeout(poll, 2000);
+      };
+      poll();
+    });
+  };
+
+  (mode === "new" ? loadWizard : mode === "appearance" ? loadAppearance : loadList)();
 })();
 `;
 
@@ -225,6 +273,8 @@ const STYLE = String.raw`
     background: light-dark(#fff, #141618); color: inherit; }
   .addr { display: flex; align-items: center; gap: 8px; } .addr input { flex: 1; }
   form .btn { margin-top: 16px; }
+  label.check { display: flex; align-items: center; gap: 8px; font-weight: 400; margin: 16px 0 0; }
+  label.check input { width: auto; }
   fieldset.themes { border: 0; padding: 0; margin: 16px 0 0; display: grid; gap: 8px; }
   fieldset.themes legend { font-weight: 600; margin-bottom: 6px; padding: 0; }
   label.theme { display: flex; align-items: flex-start; gap: 10px; margin: 0; font-weight: 400; padding: 10px 12px;
@@ -234,16 +284,16 @@ const STYLE = String.raw`
   label.theme small { display: block; color: light-dark(#6b7280, #9aa0a6); }
 `;
 
-export function consolePageHtml(mode: "list" | "new"): string {
+export function consolePageHtml(mode: "list" | "new" | "appearance", slug = ""): string {
 	return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${mode === "new" ? "Create a site" : "My sites"}</title>
+<title>${mode === "new" ? "Create a site" : mode === "appearance" ? "Appearance" : "My sites"}</title>
 <style>${STYLE}</style>
 </head>
-<body data-mode="${mode}">
+<body data-mode="${mode}" data-slug="${slug.replace(/[^a-z0-9-]/g, "")}">
 <header><strong>Sites</strong><nav id="nav" aria-label="Main"></nav></header>
 <main><div id="root"><p class="muted">Loading\u2026</p></div></main>
 <script>${CLIENT_JS}</script>

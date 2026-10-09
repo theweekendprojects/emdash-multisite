@@ -4,8 +4,8 @@
  * through Better Auth's organization/create so every rule in one place applies.
  */
 import { isStaff } from "./fleet.ts";
-import { isEmailVerified, readAllStatuses, readOrgs } from "./registry.ts";
-import { DEFAULT_LIMITS, effectiveTheme, needsReconcile, slugProblem, themeFromMetadata, type SiteStatus } from "./rules.ts";
+import { isEmailVerified, readAllStatuses, readOrgs, readSiteTheme } from "./registry.ts";
+import { DEFAULT_LIMITS, effectiveTheme, needsReconcile, slugProblem, switchSummary, themeFromMetadata, type SiteStatus } from "./rules.ts";
 import { siteUrl, type SitesConfig } from "./sites.ts";
 
 export interface MySite {
@@ -29,6 +29,8 @@ export interface ConsoleState {
 	sites: MySite[];
 	emailVerified: boolean;
 	staff: boolean;
+	/** Does the platform offer more than one theme? (Shows the Appearance action.) */
+	themed: boolean;
 	/** Sites owned vs. the cap (`max` null = no cap). */
 	owned: number;
 	max: number | null;
@@ -46,13 +48,15 @@ export async function consoleState(userId: string, config: SitesConfig): Promise
 	for (const org of orgs) {
 		const me = org.members.find((m) => m.userId === userId);
 		if (!me) continue;
+		// The site's own option wins over the org metadata: it changes when the owner switches themes.
+		const live = config.themes ? await readSiteTheme(org.slug) : null;
 		const st = statuses.get(org.slug);
 		const url = siteUrl(org.slug, config);
 		sites.push({
 			slug: org.slug,
 			name: org.name,
 			role: me.role,
-			theme: config.themes ? (config.themes[effectiveTheme(themeFromMetadata(org.metadata), config.themes, config.defaultTheme)]?.name ?? null) : null,
+			theme: config.themes ? (config.themes[effectiveTheme(live ?? themeFromMetadata(org.metadata), config.themes, config.defaultTheme)]?.name ?? null) : null,
 			status: st?.status ?? "unknown",
 			...(st?.status === "failed" ? { error: st.error } : {}),
 			url,
@@ -65,6 +69,7 @@ export async function consoleState(userId: string, config: SitesConfig): Promise
 		sites,
 		emailVerified,
 		staff,
+		themed: Object.keys(config.themes ?? {}).length > 1,
 		owned: sites.filter((s) => s.role === "owner").length,
 		max: (config.limits ?? DEFAULT_LIMITS).sitesPerUser ?? null,
 	};
@@ -76,4 +81,39 @@ export async function checkAddress(slug: unknown, primary: string): Promise<{ av
 	if (problem) return { available: false, message: problem };
 	const taken = (await readOrgs()).some((o) => o.slug === slug);
 	return taken ? { available: false, message: "That address is taken." } : { available: true, message: null };
+}
+
+/** May this user change the site's settings (theme)? The owner, or staff; the control plane is staff only. */
+export async function canManage(userId: string, slug: string, primary: string): Promise<boolean> {
+	if (await isStaff(userId)) return true;
+	if (slug === primary) return false;
+	const org = (await readOrgs()).find((o) => o.slug === slug);
+	return org?.ownerUserId === userId;
+}
+
+export interface AppearanceState {
+	slug: string;
+	name: string;
+	current: string;
+	themes: Array<{ id: string; name: string; description: string; current: boolean; adds: string[]; hides: string[] }>;
+}
+
+/** The theme picker data for one site, with what each switch would add and hide. */
+export async function appearanceState(slug: string, config: SitesConfig): Promise<AppearanceState | null> {
+	if (!config.themes) return null;
+	const org = (await readOrgs()).find((o) => o.slug === slug);
+	if (!org && slug !== config.primary) return null;
+	const current = effectiveTheme((await readSiteTheme(slug)) ?? themeFromMetadata(org?.metadata), config.themes, config.defaultTheme);
+	return {
+		slug,
+		name: org?.name ?? slug,
+		current,
+		themes: Object.entries(config.themes).map(([id, t]) => ({
+			id,
+			name: t.name,
+			description: t.description ?? "",
+			current: id === current,
+			...switchSummary(config.themes!, current, id),
+		})),
+	};
 }

@@ -235,6 +235,15 @@ runtime, every query) reads it from ALS/the request db. There is no per-call sit
   size limit and abort the run. Resize to 1000x640 and take JPEG viewport shots, read state
   with `evaluate`, and wait for images/fonts before judging a page "empty".
 
+- **Never `pkill -f` a pattern that appears in your own command line.** `pkill -f "astro.mjs build"`
+  inside a command that also mentions it kills the shell running it, and everything after it
+  silently does not run. Kill by PID or run the pkill alone.
+- **`wrangler versions upload` takes ~35 s.** Use `timeout 110`, write the output to a file, and
+  read `Worker Version ID` from it. Shorter timeouts return an empty ID and the next step
+  (`versions deploy ""`) fails confusingly.
+- **Theme switch = additive seed + option flip** (`switchTheme` in `orgs.ts`). `reconcile` reads
+  the site's current theme option, not the org metadata, so a recovery never reverts a switch.
+
 ## How to verify a change (always do this)
 
 Run with Node ≥ 22.18:

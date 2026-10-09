@@ -126,6 +126,10 @@ const themeMemo = (): Memo => ((globalThis as Record<symbol, unknown>)[THEME_MEM
  * per isolate: it runs on every public request, and the value only changes
  * when a site is provisioned. Failures (tables not created yet) are not cached.
  */
+export function forgetSiteTheme(site: string): void {
+	themeMemo().delete(site);
+}
+
 export async function readSiteTheme(site: string): Promise<string | null> {
 	const memo = themeMemo();
 	const hit = memo.get(site);

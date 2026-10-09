@@ -10,8 +10,8 @@ const check = (name: string, got: unknown, want: unknown) => {
 
 // The client script is a string inside a template literal: a stray backtick or a
 // syntax slip only shows up in the browser. `new Function` parses without running.
-for (const mode of ["list", "new"] as const) {
-	const html = consolePageHtml(mode);
+for (const mode of ["list", "new", "appearance"] as const) {
+	const html = consolePageHtml(mode, "my-site");
 	const script = html.match(/<script>([\s\S]*)<\/script>/)?.[1] ?? "";
 	let parsed = true;
 	try {
@@ -22,6 +22,7 @@ for (const mode of ["list", "new"] as const) {
 	}
 	check(`client script parses (${mode})`, parsed, true);
 	check(`mode attribute (${mode})`, html.includes(`data-mode="${mode}"`), true);
+	check(`slug attribute (${mode})`, html.includes('data-slug="my-site"'), true);
 }
 
 const cfg = { primary: "main", hosts: { "acme-x.workers.dev": "acme" }, wildcard: "example.com" };

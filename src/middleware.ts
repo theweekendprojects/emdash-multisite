@@ -1,6 +1,6 @@
 import { after } from "emdash";
 import { runAsSite } from "./dialect.ts";
-import { checkAddress, consoleState } from "./console.ts";
+import { appearanceState, canManage, checkAddress, consoleState } from "./console.ts";
 import { consolePageHtml } from "./console-page.ts";
 import { isStaff, listSites } from "./fleet.ts";
 import { fleetPageHtml } from "./fleet-page.ts";
@@ -13,6 +13,7 @@ import {
 	readStatus,
 	reconcile,
 	slugProblem,
+	switchTheme,
 } from "./orgs.ts";
 import { isEmailVerified, readOrgs, readSiteTheme, warm } from "./registry.ts";
 import { DEFAULT_LIMITS, csrfOk, createProblem, needsReconcile, effectiveTheme, isThemeRouteRequest, isThemed, themeFromMetadata, themeProblem, themeRoute } from "./rules.ts";
@@ -148,6 +149,52 @@ export async function onRequest(context: Ctx, next: Next): Promise<Response> {
 		const { pathname } = context.url;
 		const { method } = context.request;
 		if (pathname.startsWith("/api/multisite/") || pathname === FLEET_PAGE || pathname === ORG_CREATE_PATH) await warm();
+
+		// Appearance: the owner's theme picker for one site.
+		const appearancePage = /^\/sites\/([a-z0-9-]+)\/appearance$/.exec(pathname);
+		if (method === "GET" && appearancePage) {
+			if (!(await sessionUserId(context))) {
+				return Response.redirect(new URL(`/login?redirect=${encodeURIComponent(pathname)}`, context.url), 302);
+			}
+			return html(consolePageHtml("appearance", appearancePage[1]), 200);
+		}
+		const appearanceApi = /^\/api\/multisite\/sites\/([a-z0-9-]+)\/(appearance|theme)$/.exec(pathname);
+		if (appearanceApi) {
+			const [, slug, kind] = appearanceApi as unknown as [string, string, string];
+			const userId = await sessionUserId(context);
+			if (!userId) return json({ code: "UNAUTHORIZED" }, 401);
+			if (!(await canManage(userId, slug, sites.primary))) return json({ code: "FORBIDDEN" }, 403);
+			if (method === "GET" && kind === "appearance") {
+				const state = await appearanceState(slug, sites);
+				return state ? json(state, 200) : json({ code: "NOT_FOUND" }, 404);
+			}
+			if (method === "POST" && kind === "theme") {
+				if (!csrfOk(context.request.headers, context.url.origin)) return forbidden();
+				let body: { theme?: unknown; includeContent?: unknown } | null = null;
+				try {
+					body = (await context.request.json()) as { theme?: unknown; includeContent?: unknown };
+				} catch {
+					return json({ code: "BAD_REQUEST" }, 400);
+				}
+				const issue = themeProblem(body?.theme, sites.themes);
+				if (issue || typeof body?.theme !== "string") return json({ code: "INVALID_THEME", message: issue ?? "Choose a theme." }, 400);
+				const state = await appearanceState(slug, sites);
+				if (!state) return json({ code: "NOT_FOUND" }, 404);
+				// Re-applying the current theme is allowed: it is additive and repairs a site
+				// that is missing the theme's collections (for example after a seed change).
+				if (slug !== sites.primary && (await readStatus(slug))?.status !== "ready") return json({ code: "NOT_READY" }, 409);
+				const theme = body.theme;
+				const includeContent = body.includeContent === true;
+				after(async () => {
+					try {
+						await runAsSite(site, () => switchTheme(sites, slug, theme, { includeContent }));
+					} catch (error) {
+						console.error(`[multisite] switching "${slug}" to "${theme}" failed:`, error);
+					}
+				});
+				return json({ switching: true, to: theme }, 202);
+			}
+		}
 
 		if (method === "GET" && pathname.startsWith(STATUS_PREFIX)) {
 			const slug = pathname.slice(STATUS_PREFIX.length);

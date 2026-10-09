@@ -1,5 +1,5 @@
 /** Pure-logic checks for the org -> site hook: `node --no-warnings scripts/orgs.selfcheck.ts` */
-import { BUNDLED_THEME, DEFAULT_LIMITS, createProblem, csrfOk, effectiveTheme, needsReconcile, isThemeRouteRequest, isThemed, parseCreatedOrg, slugProblem, themeFromMetadata, themeProblem, themeRoute } from "../src/rules.ts";
+import { BUNDLED_THEME, DEFAULT_LIMITS, createProblem, csrfOk, seedCollections, switchSummary, effectiveTheme, needsReconcile, isThemeRouteRequest, isThemed, parseCreatedOrg, slugProblem, themeFromMetadata, themeProblem, themeRoute } from "../src/rules.ts";
 import { isSiteId } from "../src/rewrite.ts";
 
 let failed = 0;
@@ -85,5 +85,15 @@ check("same-origin Origin accepted", csrfOk(hdr({ origin: "https://app.example.c
 check("cross-site Origin rejected", csrfOk(hdr({ origin: "https://evil.example" }), "https://app.example.com"), false);
 check("no header, no Origin rejected", csrfOk(hdr({}), "https://app.example.com"), false);
 check("header with wrong value rejected", csrfOk(hdr({ "x-emdash-request": "0" }), "https://app.example.com"), false);
+
+// ---- theme switching ----
+const col = (...slugs: string[]) => ({ seed: { collections: slugs.map((slug) => ({ slug })) } });
+const tt = { blog: { name: "Blog", ...col("posts", "pages") }, starter: { name: "Starter", ...col("posts", "pages") }, portfolio: { name: "Portfolio", ...col("projects", "pages") }, marketing: { name: "Marketing", ...col("landing_pages") }, bare: { name: "Bare" } };
+check("seed collections listed", seedCollections(tt.blog.seed), ["posts", "pages"]);
+check("no seed / garbage -> none", [seedCollections(undefined), seedCollections({}), seedCollections({ collections: [{ slug: 3 }, null] })], [[], [], []]);
+check("blog -> starter is lossless", switchSummary(tt, "blog", "starter"), { adds: [], hides: [] });
+check("blog -> portfolio adds projects, hides posts", switchSummary(tt, "blog", "portfolio"), { adds: ["projects"], hides: ["posts"] });
+check("marketing is additive with the others (own collection)", switchSummary(tt, "marketing", "blog"), { adds: ["posts", "pages"], hides: ["landing_pages"] });
+check("seedless theme adds and hides nothing", switchSummary(tt, "bare", "bare"), { adds: [], hides: [] });
 console.log(failed ? `\n${failed} FAILED` : "\nall passed");
 process.exit(failed ? 1 : 0);

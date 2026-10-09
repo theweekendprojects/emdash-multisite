@@ -318,6 +318,22 @@ request to the subtree of the site's theme, so `/` on a blog site renders
   for the public path (canonical links, "current page" in nav). Stock templates need three small
   patches for this; see the host's `scripts/import-themes.mjs`.
 
+### Switching a live site's theme
+Owners (and staff) switch from `/sites` -> **Appearance** (`/sites/<slug>/appearance`), or via
+`POST /api/multisite/sites/<slug>/theme` with `{ "theme": "blog", "includeContent": true }` and the
+`X-EmDash-Request: 1` header. Switching is additive and never deletes: the target theme's seed is
+applied with skip-on-conflict (missing collections, menus and settings are created; existing ones,
+content and the site title are untouched), then the site's `multisite:theme` option flips. Anything
+the new theme does not show stays in the database and returns if the owner switches back. The page
+shows per theme what it adds and hides. Re-applying the current theme is allowed and repairs a site
+that lacks the theme's collections. The change shows within about a minute (the theme is memoised
+per isolate). Installing a brand-new theme still needs a build and deploy: Astro compiles pages at
+build time.
+
+Themes should not share a collection slug with a different shape. The stock marketing theme uses
+`landing_pages` (its `content` is a blocks field) while blog, portfolio and starter share
+`pages` (portable text).
+
 With no `themes` configured nothing is rewritten and the host's own pages serve every site.
 
 Seeds are applied with `skipMediaDownload`: object storage is shared across sites, so seed images
@@ -344,6 +360,9 @@ Provisioning runs in the background after the 200 and can die (Worker evicted). 
   `provisioning` for over 5 minutes) and reports the rest as `pending`. One site per call, because
   the background budget after a response (~30 s) is shorter than two provisioning runs. Call again
   for the next.
+
+State-changing routes (`retry`, `reconcile`, `theme`) require the `X-EmDash-Request: 1` header (or a
+same-origin `Origin`), like core's `/_emdash` APIs; without it they answer `403 CSRF`.
 
 A killed run leaves core's migration lock held; retries release a lock older than 5 minutes
 automatically. A site that has tables but no status row (created before status tracking) is

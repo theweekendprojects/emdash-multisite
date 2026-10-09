@@ -16,7 +16,7 @@ import { runAsSite } from "./dialect.ts";
 import { isSiteId } from "./rewrite.ts";
 import { BUNDLED_THEME, STALE_PROVISIONING_MS, effectiveTheme, needsReconcile, themeFromMetadata, type SiteStatus } from "./rules.ts";
 import type { SitesConfig } from "./sites.ts";
-import { controlDb, readOrgs, siteHasTables } from "./registry.ts";
+import { controlDb, forgetSiteTheme, readOrgs, readSiteTheme, siteHasTables } from "./registry.ts";
 import { scopeState } from "./scope.ts";
 import { provisionWith } from "./provision.ts";
 
@@ -178,6 +178,32 @@ export async function reconcile(sites: SitesConfig, only?: string): Promise<stri
 	const [slug] = await pendingReconcile(only);
 	if (!slug) return [];
 	const org = (await readOrgs()).find((o) => o.slug === slug)!;
-	await createSiteForOrg({ slug, name: org.name, ownerUserId: org.ownerUserId! }, planFor(sites, org.metadata));
+	// A switched site keeps its current theme; the org metadata only records the first choice.
+	const current = await readSiteTheme(slug);
+	await createSiteForOrg({ slug, name: org.name, ownerUserId: org.ownerUserId! }, planFor(sites, current ? { theme: current } : org.metadata));
 	return [slug];
+}
+
+/**
+ * Switch a live site to another theme. Additive and non-destructive: the target
+ * theme's seed is applied with skip-on-conflict (core creates only what is
+ * missing, never overwrites settings, menus or content), then the site's theme
+ * option is flipped. Content of the old theme stays in the database, hidden.
+ */
+export async function switchTheme(
+	sites: SitesConfig,
+	slug: string,
+	theme: string,
+	opts: { includeContent: boolean },
+): Promise<void> {
+	const seed = sites.themes?.[theme]?.seed;
+	if (!seed) throw new Error(`unknown theme: ${theme}`);
+	const db = controlDb();
+	await runAsSite(slug, async () => {
+		// eslint-disable-next-line typescript/no-explicit-any -- core types its own Database/Seed
+		await applySeed(db as any, seed as any, { includeContent: opts.includeContent, skipMediaDownload: true, onConflict: "skip" });
+		await sql`INSERT INTO options (name, value) VALUES ('multisite:theme', ${JSON.stringify(theme)})
+			ON CONFLICT(name) DO UPDATE SET value = excluded.value`.execute(db);
+	});
+	forgetSiteTheme(slug);
 }
