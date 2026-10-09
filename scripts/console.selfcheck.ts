@@ -1,5 +1,6 @@
 /** Checks for the customer console: `node --no-warnings scripts/console.selfcheck.ts` */
 import { consolePageHtml } from "../src/console-page.ts";
+import { fleetPageHtml } from "../src/fleet-page.ts";
 import { siteUrl } from "../src/sites.ts";
 let failed = 0;
 const check = (name: string, got: unknown, want: unknown) => {
@@ -23,6 +24,17 @@ for (const mode of ["list", "new", "appearance"] as const) {
 	check(`client script parses (${mode})`, parsed, true);
 	check(`mode attribute (${mode})`, html.includes(`data-mode="${mode}"`), true);
 	check(`slug attribute (${mode})`, html.includes('data-slug="my-site"'), true);
+}
+
+{
+	let parsed = true;
+	try {
+		new Function(fleetPageHtml().match(/<script>([\s\S]*)<\/script>/)?.[1] ?? "");
+	} catch (e) {
+		parsed = false;
+		console.log(String(e));
+	}
+	check("fleet client script parses", parsed, true);
 }
 
 const cfg = { primary: "main", hosts: { "acme-x.workers.dev": "acme" }, wildcard: "example.com" };

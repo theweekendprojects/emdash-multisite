@@ -16,7 +16,13 @@ const CLIENT_JS = String.raw`
   const root = document.getElementById("root");
   const countEl = document.getElementById("count");
   const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;" }[c]));
-  const pill = (s) => '<span class="pill ' + esc(s) + '">' + esc(s) + '</span>';
+  const pill = (s, state) => state && state !== "active"
+    ? '<span class="pill failed">' + esc(state) + '</span>' : '<span class="pill ' + esc(s) + '">' + esc(s) + '</span>';
+  const btn = (slug, action, label) => '<button class="act" data-slug="' + esc(slug) + '" data-action="' + action + '">' + label + '</button>';
+  const actions = (s) => s.name === "(control plane)" ? "" :
+    s.state === "suspended" ? btn(s.slug, "resume", "Resume") + btn(s.slug, "delete", "Delete") :
+    s.state === "deleted" ? btn(s.slug, "restore", "Restore") :
+    btn(s.slug, "suspend", "Suspend") + btn(s.slug, "delete", "Delete");
   const date = (d) => d ? new Date(d).toISOString().slice(0, 10) : "\u2014";
   try {
     const res = await fetch("/api/multisite/fleet", { headers: { accept: "application/json" } });
@@ -25,13 +31,23 @@ const CLIENT_JS = String.raw`
     const { sites } = await res.json();
     countEl.textContent = sites.length + " site" + (sites.length === 1 ? "" : "s");
     root.innerHTML =
-      '<table><thead><tr><th>Site</th><th>Name</th><th>Owner</th><th>Status</th><th>Users</th><th>Created</th></tr></thead><tbody>' +
+      '<table><thead><tr><th>Site</th><th>Name</th><th>Owner</th><th>Status</th><th>Users</th><th>Created</th><th>Actions</th></tr></thead><tbody>' +
       sites.map((s) =>
         '<tr><td><code>' + esc(s.slug) + '</code></td><td>' + esc(s.name) + '</td>' +
-        '<td>' + esc(s.ownerEmail || "\u2014") + '</td><td>' + pill(s.status) + '</td>' +
-        '<td>' + esc(s.userCount) + '</td><td class="muted">' + esc(date(s.createdAt)) + '</td></tr>'
+        '<td>' + esc(s.ownerEmail || "\u2014") + '</td><td>' + pill(s.status, s.state) + '</td>' +
+        '<td>' + esc(s.userCount) + '</td><td class="muted">' + esc(date(s.createdAt)) + '</td><td>' + actions(s) + '</td></tr>'
       ).join("") +
       '</tbody></table>';
+    root.querySelectorAll("button.act").forEach((b) => b.addEventListener("click", async () => {
+      if (b.dataset.action === "delete" && !confirm("Delete " + b.dataset.slug + "?")) return;
+      b.disabled = true;
+      const r = await fetch("/api/multisite/sites/" + b.dataset.slug + "/state", {
+        method: "POST", credentials: "same-origin",
+        headers: { "content-type": "application/json", "x-emdash-request": "1" }, body: JSON.stringify({ action: b.dataset.action }),
+      });
+      if (!r.ok) { alert("Could not " + b.dataset.action + " (HTTP " + r.status + ")"); }
+      location.reload();
+    }));
   } catch (e) {
     root.innerHTML = '<div class="err">Could not load the fleet: ' + esc(String((e && e.message) || e)) + '</div>';
   }
@@ -59,6 +75,8 @@ const STYLE = String.raw`
   .provisioning { background: #f59e0b22; color: #d97706; }
   .failed { background: #ef444422; color: #dc2626; }
   .unknown { background: #6b728022; color: #6b7280; }
+  button.act { font: inherit; font-size: 12px; margin-right: 6px; padding: 3px 8px; border-radius: 6px; cursor: pointer;
+    border: 1px solid light-dark(#d1d5db, #2b2f33); background: light-dark(#fff, #1a1c1f); color: inherit; }
   .err { padding: 16px; border: 1px solid #ef4444; border-radius: 10px; color: #dc2626; background: #ef444411; }
 `;
 

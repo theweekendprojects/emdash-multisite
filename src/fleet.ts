@@ -16,6 +16,7 @@ import { siteDialect, runAsSite } from "./dialect.ts";
 import { isSiteId, isSiteTable } from "./rewrite.ts";
 import { scopeState } from "./scope.ts";
 import type { SiteStatus } from "./orgs.ts";
+import { readAllStates } from "./registry.ts";
 
 function controlDb(): Kysely<never> {
 	const st = scopeState();
@@ -41,6 +42,8 @@ export interface FleetSite {
 	name: string;
 	ownerEmail: string | null;
 	status: SiteStatus["status"] | "unknown";
+	/** active, or suspended / deleted by staff or the owner. */
+	state: "active" | "suspended" | "deleted";
 	createdAt: string | null;
 	userCount: number;
 }
@@ -71,6 +74,7 @@ export async function listSites(): Promise<FleetSite[]> {
 			SELECT data FROM _plugin_storage WHERE collection = 'organizations'`.execute(db);
 		const members = await sql<{ data: string }>`
 			SELECT data FROM _plugin_storage WHERE collection = 'members'`.execute(db);
+		const states = await readAllStates();
 		const statusRows = await sql<{ name: string; value: string }>`
 			SELECT name, value FROM options WHERE name LIKE 'multisite:site:%'`.execute(db);
 
@@ -103,6 +107,7 @@ export async function listSites(): Promise<FleetSite[]> {
 			name: "(control plane)",
 			ownerEmail: null,
 			status: "ready",
+			state: "active",
 			createdAt: null,
 			userCount: await countUsers(db, primary, primary),
 		});
@@ -116,6 +121,7 @@ export async function listSites(): Promise<FleetSite[]> {
 				name: org?.name ?? slug,
 				ownerEmail,
 				status: statusBySlug.get(slug) ?? "unknown",
+				state: states.get(slug)?.state ?? "active",
 				createdAt: org?.createdAt || null,
 				userCount: await countUsers(db, slug, primary),
 			});

@@ -257,3 +257,57 @@ export function loginEntryRedirect(url: URL, signedIn: boolean, landing: string)
 	next.searchParams.set("redirect", landing);
 	return next.pathname + next.search;
 }
+
+// ---- site state (suspend / delete) -----------------------------------------
+
+/**
+ * Operational state of a site, kept on the control plane so a tenant can never
+ * change it. `suspended` is reversible by staff; `deleted` is the owner's soft
+ * delete: the site is hidden and unreachable, and staff can restore it until it
+ * is purged.
+ */
+export type SiteState = { state: "suspended" | "deleted"; at: string; reason?: string };
+
+export const STATE_KEY_PREFIX = "multisite:state:";
+
+export function parseSiteState(raw: string | null | undefined): SiteState | null {
+	if (!raw) return null;
+	try {
+		const v = JSON.parse(raw) as Partial<SiteState> | null;
+		return v && (v.state === "suspended" || v.state === "deleted") && typeof v.at === "string"
+			? { state: v.state, at: v.at, ...(typeof v.reason === "string" ? { reason: v.reason } : {}) }
+			: null;
+	} catch {
+		return null;
+	}
+}
+
+export type StateAction = "suspend" | "resume" | "delete" | "restore";
+
+/**
+ * What an action does from the current state, or why it cannot be done.
+ * `next: null` means "back to active". Suspend/resume/restore are staff only;
+ * the owner may delete.
+ */
+export function transition(
+	current: SiteState | null,
+	action: StateAction,
+	actor: { staff: boolean; owner: boolean },
+): { ok: true; next: SiteState["state"] | null } | { ok: false; status: number; code: string } {
+	const forbidden = { ok: false, status: 403, code: "FORBIDDEN" } as const;
+	const conflict = { ok: false, status: 409, code: "INVALID_STATE" } as const;
+	switch (action) {
+		case "suspend":
+			if (!actor.staff) return forbidden;
+			return current ? conflict : { ok: true, next: "suspended" };
+		case "resume":
+			if (!actor.staff) return forbidden;
+			return current?.state === "suspended" ? { ok: true, next: null } : conflict;
+		case "delete":
+			if (!actor.staff && !actor.owner) return forbidden;
+			return current?.state === "deleted" ? conflict : { ok: true, next: "deleted" };
+		case "restore":
+			if (!actor.staff) return forbidden;
+			return current?.state === "deleted" ? { ok: true, next: null } : conflict;
+	}
+}

@@ -8,7 +8,7 @@ import { Kysely, sql } from "kysely";
 import { getDb } from "emdash/runtime";
 import { siteDialect, runAsSite } from "./dialect.ts";
 import { scopeState } from "./scope.ts";
-import type { SiteStatus } from "./rules.ts";
+import { STATE_KEY_PREFIX, parseSiteState, type SiteState, type SiteStatus } from "./rules.ts";
 
 /**
  * Make sure the shared inner dialect exists. On a cold isolate our outer
@@ -202,4 +202,62 @@ export async function siteHasUser(site: string, userId: string): Promise<boolean
 		sql<{ id: string }>`SELECT id FROM users WHERE id = ${userId} AND disabled = 0`.execute(db),
 	);
 	return r.rows.length === 1;
+}
+
+// ---- suspend / delete state --------------------------------------------------
+
+const STATE_MEMO = Symbol.for("emdash-multisite:state-memo");
+const STATE_TTL_MS = 30_000;
+type StateMemo = Map<string, { value: SiteState | null; expires: number }>;
+const stateMemo = (): StateMemo => ((globalThis as Record<symbol, unknown>)[STATE_MEMO] ??= new Map()) as StateMemo;
+
+/**
+ * The site's suspend/delete state, read from the CONTROL PLANE (a tenant cannot
+ * touch it). Runs on every tenant request, so it is memoised for 30 s per
+ * isolate; a change made in this isolate takes effect immediately. On a read
+ * failure it returns null (serve the site) and does not cache the miss.
+ */
+export async function readSiteState(site: string): Promise<SiteState | null> {
+	const memo = stateMemo();
+	const hit = memo.get(site);
+	if (hit && hit.expires > Date.now()) return hit.value;
+	try {
+		const db = controlDb();
+		const r = await runAsSite(scopeState().primary, () =>
+			sql<{ value: string }>`SELECT value FROM options WHERE name = ${STATE_KEY_PREFIX + site}`.execute(db),
+		);
+		const value = parseSiteState(r.rows[0]?.value);
+		memo.set(site, { value, expires: Date.now() + STATE_TTL_MS });
+		return value;
+	} catch {
+		return null;
+	}
+}
+
+/** Every site that is not active, keyed by slug. */
+export async function readAllStates(): Promise<Map<string, SiteState>> {
+	const db = controlDb();
+	const r = await runAsSite(scopeState().primary, () =>
+		sql<{ name: string; value: string }>`SELECT name, value FROM options WHERE name LIKE ${`${STATE_KEY_PREFIX}%`}`.execute(db),
+	);
+	const out = new Map<string, SiteState>();
+	for (const row of r.rows) {
+		const v = parseSiteState(row.value);
+		if (v) out.set(row.name.slice(STATE_KEY_PREFIX.length), v);
+	}
+	return out;
+}
+
+/** Set (or clear, with null) a site's state. */
+export async function writeSiteState(site: string, state: SiteState | null): Promise<void> {
+	const db = controlDb();
+	await runAsSite(scopeState().primary, async () => {
+		if (state) {
+			await sql`INSERT INTO options (name, value) VALUES (${STATE_KEY_PREFIX + site}, ${JSON.stringify(state)})
+				ON CONFLICT(name) DO UPDATE SET value = excluded.value`.execute(db);
+		} else {
+			await sql`DELETE FROM options WHERE name = ${STATE_KEY_PREFIX + site}`.execute(db);
+		}
+	});
+	stateMemo().set(site, { value: state, expires: Date.now() + STATE_TTL_MS });
 }

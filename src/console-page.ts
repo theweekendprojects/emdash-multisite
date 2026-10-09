@@ -36,18 +36,21 @@ const CLIENT_JS = String.raw`
 
   // ---------- My sites ----------
   const siteCard = (s, staff, themed) => {
-    const open = s.url && s.status === "ready"
+    const suspended = s.state === "suspended";
+    const open = s.url && s.status === "ready" && !suspended
       ? '<a class="btn" href="' + esc(s.url) + '" target="_blank" rel="noopener">Open site</a>' +
         '<a class="btn primary" href="' + esc(s.adminUrl) + '" target="_blank" rel="noopener">Open admin</a>'
       : "";
     const noUrl = s.status === "ready" && !s.url ? '<p class="muted">No public address is configured for this site yet.</p>' : "";
     const err = s.error ? '<p class="errtext">' + esc(s.error) + '</p>' : "";
-    const appearance = s.status === "ready" && (s.role === "owner" || staff) && themed
+    const appearance = s.status === "ready" && !suspended && (s.role === "owner" || staff) && themed
       ? '<a class="btn" href="/sites/' + esc(s.slug) + '/appearance">Appearance</a>' : "";
     const retry = s.canRetry ? '<button class="btn" data-retry="' + esc(s.slug) + '">Retry setup</button>' : "";
-    return '<article class="card"><div class="row"><h2>' + esc(s.name) + '</h2>' + status(s.status) + '</div>' +
+    const del = s.role === "owner" ? '<button class="btn danger" data-delete="' + esc(s.slug) + '" data-name="' + esc(s.name) + '">Delete</button>' : "";
+    const note = suspended ? '<p class="errtext">This site is suspended. Contact support to restore it.</p>' : "";
+    return '<article class="card"><div class="row"><h2>' + esc(s.name) + '</h2>' + (suspended ? '<span class="pill failed">suspended</span>' : status(s.status)) + '</div>' + note +
       '<p class="muted"><code>' + esc(s.slug) + '</code> \u00b7 ' + esc(s.role) + (s.theme ? ' \u00b7 ' + esc(s.theme) : '') + '</p>' + err + noUrl +
-      '<div class="actions">' + open + appearance + retry + '</div></article>';
+      '<div class="actions">' + open + appearance + retry + del + '</div></article>';
   };
 
   let timer = null;
@@ -71,6 +74,15 @@ const CLIENT_JS = String.raw`
     root.querySelectorAll("[data-retry]").forEach((b) => b.addEventListener("click", async () => {
       b.disabled = true; b.textContent = "Starting\u2026";
       await getJson("/api/multisite/sites/" + b.dataset.retry + "/retry", { method: "POST", headers: { "x-emdash-request": "1" } });
+      loadList();
+    }));
+    root.querySelectorAll("[data-delete]").forEach((b) => b.addEventListener("click", async () => {
+      if (!confirm('Delete "' + b.dataset.name + '"? The site goes offline now. Support can restore it for a limited time.')) return;
+      b.disabled = true;
+      const res = await getJson("/api/multisite/sites/" + b.dataset.delete + "/state", {
+        method: "POST", headers: { "content-type": "application/json", "x-emdash-request": "1" }, body: JSON.stringify({ action: "delete" }),
+      });
+      if (!res.ok) { alert((res.body && (res.body.message || res.body.code)) || "Could not delete the site."); b.disabled = false; return; }
       loadList();
     }));
     clearTimeout(timer);
@@ -254,6 +266,7 @@ const STYLE = String.raw`
     padding: 8px 14px; border-radius: 8px; border: 1px solid light-dark(#d1d5db, #2b2f33);
     background: light-dark(#fff, #1a1c1f); color: inherit; }
   .btn.primary { background: #2563eb; border-color: #2563eb; color: #fff; }
+  .btn.danger { color: #dc2626; border-color: #dc262666; }
   .btn:focus-visible, input:focus-visible, a:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
   .btn[disabled], .btn[aria-disabled="true"] { opacity: .5; cursor: not-allowed; pointer-events: none; }
   code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }

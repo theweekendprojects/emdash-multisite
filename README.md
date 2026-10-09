@@ -400,6 +400,24 @@ A killed run leaves core's migration lock held; retries release a lock older tha
 automatically. A site that has tables but no status row (created before status tracking) is
 adopted as `ready` instead of being provisioned a second time on top of live content.
 
+## Suspending and deleting sites
+A site's operational state lives on the control plane (`multisite:state:<slug>` in `options`), so a
+tenant cannot change it. `POST /api/multisite/sites/<slug>/state` with `{ "action": ... }` and the
+`X-EmDash-Request: 1` header:
+
+| action | who | effect |
+|---|---|---|
+| `suspend` | staff | every request to the site answers `503 This site is unavailable`; the owner sees it listed as suspended |
+| `resume` | staff | back to active |
+| `delete` | owner or staff | soft delete: the site answers `404` (as if it never existed) and disappears from the owner's list; frees one of the owner's site slots; the slug stays taken |
+| `restore` | staff | undo a delete |
+
+The fleet page has the matching buttons. Better Auth's `organization/delete` is refused on the
+control plane (`403 USE_DELETE_SITE`) because it would orphan the site's tables. The state is read on
+every tenant request and memoised 30 s per isolate (a change made in an isolate applies to it
+immediately). **Not done:** purging a deleted site's ~90 tables and its organization after a grace
+period (the data stays in D1), and renaming (the slug is the table suffix).
+
 ## Operating a fleet
 
 - **One shared D1 is single-threaded.** One busy site can slow all. Shard across multiple D1s (by

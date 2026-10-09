@@ -1,5 +1,5 @@
 /** Pure-logic checks for the org -> site hook: `node --no-warnings scripts/orgs.selfcheck.ts` */
-import { BUNDLED_THEME, DEFAULT_LIMITS, createProblem, csrfOk, isLocalPath, loginEntryRedirect, seedCollections, switchSummary, effectiveTheme, needsReconcile, isThemeRouteRequest, isThemed, parseCreatedOrg, slugProblem, themeFromMetadata, themeProblem, themeRoute } from "../src/rules.ts";
+import { BUNDLED_THEME, DEFAULT_LIMITS, createProblem, csrfOk, parseSiteState, transition, isLocalPath, loginEntryRedirect, seedCollections, switchSummary, effectiveTheme, needsReconcile, isThemeRouteRequest, isThemed, parseCreatedOrg, slugProblem, themeFromMetadata, themeProblem, themeRoute } from "../src/rules.ts";
 import { isSiteId } from "../src/rewrite.ts";
 
 let failed = 0;
@@ -105,5 +105,20 @@ check("explicit redirect is respected", entry("/login?redirect=%2Fadmin%2Ffleet"
 check("signed-in visitor goes to the landing", [entry("/auth/sign-in", true), entry("/login?redirect=%2Fx", true)], ["/sites", "/sites"]);
 check("other pages untouched", [entry("/"), entry("/account"), entry("/auth/forgot-password"), entry("/sites")], [null, null, null, null]);
 check("local path check", [isLocalPath("/sites"), isLocalPath("//evil.com"), isLocalPath("/\\evil.com"), isLocalPath("https://evil.com"), isLocalPath("sites")], [true, false, false, false, false]);
+
+// ---- site state ----
+const susp = { state: "suspended" as const, at: "2026-10-09T00:00:00Z" };
+const del = { state: "deleted" as const, at: "2026-10-09T00:00:00Z" };
+const staff = { staff: true, owner: false }, owner = { staff: false, owner: true }, nobody = { staff: false, owner: false };
+check("parse state", [parseSiteState(JSON.stringify(susp))?.state, parseSiteState('{"state":"x","at":"y"}'), parseSiteState("nope"), parseSiteState(null)], ["suspended", null, null, null]);
+check("staff suspends an active site", transition(null, "suspend", staff), { ok: true, next: "suspended" });
+check("owner cannot suspend", transition(null, "suspend", owner), { ok: false, status: 403, code: "FORBIDDEN" });
+check("cannot suspend twice", transition(susp, "suspend", staff), { ok: false, status: 409, code: "INVALID_STATE" });
+check("staff resumes a suspended site", transition(susp, "resume", staff), { ok: true, next: null });
+check("resume needs suspended", [transition(null, "resume", staff).ok, transition(del, "resume", staff).ok], [false, false]);
+check("owner deletes own site, even suspended", [transition(null, "delete", owner), transition(susp, "delete", owner)], [{ ok: true, next: "deleted" }, { ok: true, next: "deleted" }]);
+check("stranger cannot delete", transition(null, "delete", nobody), { ok: false, status: 403, code: "FORBIDDEN" });
+check("cannot delete twice", transition(del, "delete", owner).ok, false);
+check("only staff restore, only deleted", [transition(del, "restore", owner).ok, transition(del, "restore", staff), transition(null, "restore", staff).ok], [false, { ok: true, next: null }, false]);
 console.log(failed ? `\n${failed} FAILED` : "\nall passed");
 process.exit(failed ? 1 : 0);

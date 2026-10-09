@@ -4,7 +4,7 @@
  * through Better Auth's organization/create so every rule in one place applies.
  */
 import { isStaff } from "./fleet.ts";
-import { isEmailVerified, readAllStatuses, readOrgs, readSiteTheme } from "./registry.ts";
+import { isEmailVerified, readAllStates, readAllStatuses, readOrgs, readSiteTheme } from "./registry.ts";
 import { DEFAULT_LIMITS, effectiveTheme, needsReconcile, slugProblem, switchSummary, themeFromMetadata, type SiteStatus } from "./rules.ts";
 import { siteUrl, type SitesConfig } from "./sites.ts";
 
@@ -16,6 +16,8 @@ export interface MySite {
 	/** Theme display name, or null when the platform has a single bundled theme. */
 	theme: string | null;
 	status: SiteStatus["status"] | "unknown";
+	/** `suspended` sites show but cannot be opened or changed; deleted ones are not listed at all. */
+	state: "active" | "suspended";
 	error?: string;
 	/** Public address, or null when no hostname is configured for the site. */
 	url: string | null;
@@ -37,9 +39,10 @@ export interface ConsoleState {
 }
 
 export async function consoleState(userId: string, config: SitesConfig): Promise<ConsoleState> {
-	const [orgs, statuses, emailVerified, staff] = await Promise.all([
+	const [orgs, statuses, states, emailVerified, staff] = await Promise.all([
 		readOrgs(),
 		readAllStatuses(),
+		readAllStates(),
 		isEmailVerified(userId),
 		isStaff(userId),
 	]);
@@ -48,6 +51,8 @@ export async function consoleState(userId: string, config: SitesConfig): Promise
 	for (const org of orgs) {
 		const me = org.members.find((m) => m.userId === userId);
 		if (!me) continue;
+		const siteState = states.get(org.slug);
+		if (siteState?.state === "deleted") continue;
 		// The site's own option wins over the org metadata: it changes when the owner switches themes.
 		const live = config.themes ? await readSiteTheme(org.slug) : null;
 		const st = statuses.get(org.slug);
@@ -58,10 +63,11 @@ export async function consoleState(userId: string, config: SitesConfig): Promise
 			role: me.role,
 			theme: config.themes ? (config.themes[effectiveTheme(live ?? themeFromMetadata(org.metadata), config.themes, config.defaultTheme)]?.name ?? null) : null,
 			status: st?.status ?? "unknown",
+			state: siteState?.state === "suspended" ? "suspended" : "active",
 			...(st?.status === "failed" ? { error: st.error } : {}),
 			url,
-			adminUrl: url ? `/sites/${org.slug}/open-admin` : null,
-			canRetry: (me.role === "owner" || staff) && needsReconcile(st ?? null, now),
+			adminUrl: url && !siteState ? `/sites/${org.slug}/open-admin` : null,
+			canRetry: !siteState && (me.role === "owner" || staff) && needsReconcile(st ?? null, now),
 		});
 	}
 	sites.sort((a, b) => a.name.localeCompare(b.name));

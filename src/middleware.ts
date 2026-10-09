@@ -15,10 +15,21 @@ import {
 	slugProblem,
 	switchTheme,
 } from "./orgs.ts";
-import { consumeHandoffNonce, handoffSecret, isEmailVerified, readOrgs, readSiteTheme, siteHasUser, warm } from "./registry.ts";
+import {
+	consumeHandoffNonce,
+	handoffSecret,
+	isEmailVerified,
+	readAllStates,
+	readOrgs,
+	readSiteState,
+	readSiteTheme,
+	siteHasUser,
+	warm,
+	writeSiteState,
+} from "./registry.ts";
 import { signHandoff, verifyHandoff } from "./handoff.ts";
 import { siteUrl } from "./sites.ts";
-import { DEFAULT_LIMITS, DEFAULT_POST_LOGIN_PATH, csrfOk, loginEntryRedirect, createProblem, needsReconcile, effectiveTheme, isThemeRouteRequest, isThemed, themeFromMetadata, themeProblem, themeRoute } from "./rules.ts";
+import { DEFAULT_LIMITS, DEFAULT_POST_LOGIN_PATH, csrfOk, loginEntryRedirect, transition, type SiteState, type StateAction, createProblem, needsReconcile, effectiveTheme, isThemeRouteRequest, isThemed, themeFromMetadata, themeProblem, themeRoute } from "./rules.ts";
 import { isSiteId } from "./rewrite.ts";
 import { scopeState } from "./scope.ts";
 import { resolveSite, type SitesConfig } from "./sites.ts";
@@ -110,12 +121,13 @@ async function guardOrgCreate(ctx: Ctx, sites: SitesConfig): Promise<Response | 
 	const userId = await sessionUserId(ctx);
 	if (!userId) return null;
 	const orgs = await readOrgs();
+	const states = await readAllStates();
 	const problem = createProblem(
 		{
 			userId,
 			emailVerified: await isEmailVerified(userId),
-			owned: orgs.filter((o) => o.ownerUserId === userId).length,
-			total: orgs.length,
+			owned: orgs.filter((o) => o.ownerUserId === userId && states.get(o.slug)?.state !== "deleted").length,
+			total: orgs.filter((o) => states.get(o.slug)?.state !== "deleted").length,
 		},
 		limits,
 	);
@@ -138,6 +150,13 @@ async function themedNext(ctx: Ctx, sites: SitesConfig, site: string, next: Next
 	await warm();
 	const theme = effectiveTheme(await readSiteTheme(site), sites.themes, sites.defaultTheme);
 	return next(themeRoute(theme, pathname) + ctx.url.search);
+}
+
+/** What visitors of a suspended or deleted site see. A deleted site is indistinguishable from one that never existed. */
+function unavailable(state: SiteState): Response {
+	return state.state === "deleted"
+		? html("<!doctype html><meta charset=utf-8><title>Not found</title><h1>Not found</h1>", 404)
+		: html("<!doctype html><meta charset=utf-8><title>Site unavailable</title><h1>This site is unavailable</h1><p>It has been suspended. If this is your site, contact support.</p>", 503);
 }
 
 const HANDOFF_PATH = "/_multisite/handoff";
@@ -170,12 +189,46 @@ export async function onRequest(context: Ctx, next: Next): Promise<Response> {
 
 	return runAsSite(site, async () => {
 		if (site !== sites.primary) {
+			await warm();
+			const blocked = await readSiteState(site);
+			if (blocked) return unavailable(blocked);
 			if (context.request.method === "GET" && context.url.pathname === HANDOFF_PATH) return acceptHandoff(context, site);
 			return themedNext(context, sites, site, next);
 		}
 		const { pathname } = context.url;
 		const { method } = context.request;
 		if (pathname.startsWith("/api/multisite/") || pathname === FLEET_PAGE || pathname === ORG_CREATE_PATH || pathname.startsWith("/_multisite/") || /^\/sites\/[^/]+\/open-admin$/.test(pathname)) await warm();
+
+		// Organization deletes would orphan the site's tables; deleting goes through the state route.
+		if (method === "POST" && pathname === "/api/auth/organization/delete") {
+			return json({ code: "USE_DELETE_SITE", message: "Delete the site from My sites instead." }, 403);
+		}
+
+		// Suspend / resume (staff) and delete / restore: the site's operational state.
+		const stateApi = /^\/api\/multisite\/sites\/([a-z0-9-]+)\/state$/.exec(pathname);
+		if (method === "POST" && stateApi) {
+			if (!csrfOk(context.request.headers, context.url.origin)) return forbidden();
+			const slug = stateApi[1]!;
+			const userId = await sessionUserId(context);
+			if (!userId) return json({ code: "UNAUTHORIZED" }, 401);
+			let body: { action?: unknown } | null = null;
+			try {
+				body = (await context.request.json()) as { action?: unknown };
+			} catch {
+				return json({ code: "BAD_REQUEST" }, 400);
+			}
+			const action = body?.action as StateAction;
+			if (!["suspend", "resume", "delete", "restore"].includes(action)) return json({ code: "BAD_REQUEST" }, 400);
+			const org = (await readOrgs()).find((o) => o.slug === slug);
+			if (!org || slug === sites.primary) return json({ code: "NOT_FOUND" }, 404);
+			const staff = await isStaff(userId);
+			const owner = org.ownerUserId === userId;
+			if (!staff && !owner) return json({ code: "NOT_FOUND" }, 404);
+			const result = transition(await readSiteState(slug), action, { staff, owner });
+			if (!result.ok) return json({ code: result.code }, result.status);
+			await writeSiteState(slug, result.next ? { state: result.next, at: new Date().toISOString(), reason: `${action} by ${userId}` } : null);
+			return json({ state: result.next ?? "active" }, 200);
+		}
 
 		// Appearance: the owner's theme picker for one site.
 		const appearancePage = /^\/sites\/([a-z0-9-]+)\/appearance$/.exec(pathname);
@@ -210,6 +263,7 @@ export async function onRequest(context: Ctx, next: Next): Promise<Response> {
 				// Re-applying the current theme is allowed: it is additive and repairs a site
 				// that is missing the theme's collections (for example after a seed change).
 				if (slug !== sites.primary && (await readStatus(slug))?.status !== "ready") return json({ code: "NOT_READY" }, 409);
+				if (await readSiteState(slug)) return json({ code: "NOT_ACTIVE" }, 409);
 				const theme = body.theme;
 				const includeContent = body.includeContent === true;
 				after(async () => {
@@ -253,7 +307,9 @@ export async function onRequest(context: Ctx, next: Next): Promise<Response> {
 			const userId = await sessionUserId(context);
 			if (!userId) return redirectTo(`/login?redirect=${encodeURIComponent(pathname)}`);
 			const base = siteUrl(slug, sites);
-			if (!base || !(await canManage(userId, slug, sites.primary)) || slug === sites.primary) return html("Not found", 404);
+			if (!base || !(await canManage(userId, slug, sites.primary)) || slug === sites.primary || (await readSiteState(slug))) {
+				return html("Not found", 404);
+			}
 			const token = await signHandoff(await handoffSecret(), { uid: userId, site: slug });
 			return redirectTo(`${base}${HANDOFF_PATH}?t=${encodeURIComponent(token)}`);
 		}

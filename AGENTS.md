@@ -257,6 +257,13 @@ runtime, every query) reads it from ALS/the request db. There is no per-call sit
 - **The cron sweep depends on `readAllStatuses`:** a site with no `multisite:site:<slug>` row, or
   not `ready`, is not swept. The primary always is.
 
+- **Site state is read from the control plane on every tenant request** (`readSiteState`,
+  30 s memo, fails open). Keep that check ahead of everything else in the tenant branch of the
+  middleware, including `/_multisite/handoff`, or a suspended site stays reachable. Do not move it
+  into the tenant's own `options`: a tenant admin could then lift their own suspension.
+- **Zsh does not word-split unquoted variables.** `H='-H a -H b'; curl $H` sends nothing; in test
+  scripts use explicit flags or a function.
+
 ## How to verify a change (always do this)
 
 Run with Node ≥ 22.18:
