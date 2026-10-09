@@ -310,3 +310,11 @@ test Worker.
 
 Append nothing here per session — update `emdash-plan/product/single-db-multisite.md`'s discussion
 log instead. Keep this file about the code and its gotchas.
+
+- **Code that runs INSIDE a tenant's request (a plugin route in the site's admin) must still reach the
+  control plane.** `activeSite()` prefers the request's own site over `runAsSite`, so a control-plane read
+  from there silently read the tenant's tables ("no matching organization"). `registry.ts` `controlDb()`
+  therefore resolves the site from `runAsSite` only. Never build a control-plane connection with
+  `scopeState().activeSite`.
+- **Native plugin pages use Block Kit (`plugin-entry.ts`), not React.** No `adminEntry`, no Kumo, no extra
+  bundle; the route is `plugins:manage` (admin only). Verified: the page shows in the tenant admin sidebar.

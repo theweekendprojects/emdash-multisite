@@ -25,6 +25,8 @@ export interface SitesConfig {
 	 * there and users land on it after signing in.
 	 */
 	accountTab?: boolean;
+	/** Public address of the app (account, my sites), e.g. `https://app.example.com`. Used for links back from a site's admin. */
+	appUrl?: string;
 	/** Days a deleted site stays restorable before its data is purged. Default 14. */
 	deleteGraceDays?: number;
 	/** Where users land after signing in or up on the control plane. Defaults to `/sites`. */
@@ -44,6 +46,7 @@ export function assertSitesConfig(c: SitesConfig): void {
 	if (c.defaultTheme && !Object.hasOwn(c.themes ?? {}, c.defaultTheme)) {
 		throw new Error(`[multisite] defaultTheme "${c.defaultTheme}" is not in themes`);
 	}
+	if (c.appUrl !== undefined && !/^https?:\/\/[^/\s]+$/.test(c.appUrl)) throw new Error("[multisite] appUrl must be an origin like https://app.example.com (no path)");
 	if (c.deleteGraceDays !== undefined && (!Number.isInteger(c.deleteGraceDays) || c.deleteGraceDays < 0)) {
 		throw new Error("[multisite] deleteGraceDays must be a non-negative integer");
 	}

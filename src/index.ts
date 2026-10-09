@@ -2,6 +2,7 @@ import type { DatabaseDescriptor } from "emdash/db";
 import { assertSitesConfig, type SitesConfig } from "./sites.ts";
 
 export { runAsSite } from "./dialect.ts";
+export { multisitePlugin } from "./plugin.ts";
 export { resolveSite, type SitesConfig } from "./sites.ts";
 
 /** Inner adapter entrypoint -> our wrapping entrypoint. */

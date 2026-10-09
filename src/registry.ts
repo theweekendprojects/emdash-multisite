@@ -6,7 +6,7 @@
  */
 import { Kysely, sql } from "kysely";
 import { getDb } from "emdash/runtime";
-import { siteDialect, runAsSite } from "./dialect.ts";
+import { currentSite, siteDialect, runAsSite } from "./dialect.ts";
 import { scopeState } from "./scope.ts";
 import { STATE_KEY_PREFIX, parseSiteState, type SiteState, type SiteStatus } from "./rules.ts";
 
@@ -20,11 +20,17 @@ export async function warm(): Promise<void> {
 	if (!scopeState().inner) await getDb();
 }
 
-/** Control-plane connection: the shared inner driver, site resolved per query. */
+/**
+ * Control-plane connection: the shared inner driver, site chosen per query by
+ * `runAsSite` only. It must NOT use the request's own site (`activeSite`): code
+ * that runs inside a tenant's request (a plugin route in the site's admin) still
+ * has to read the control plane, and the request's site would win over
+ * `runAsSite(primary)` and make it read the tenant's tables instead.
+ */
 export function controlDb(): Kysely<never> {
 	const st = scopeState();
 	if (!st.inner) throw new Error("[multisite] database not initialised yet");
-	return new Kysely<never>({ dialect: siteDialect(st.inner, st.activeSite, st.primary) });
+	return new Kysely<never>({ dialect: siteDialect(st.inner, () => currentSite() ?? st.primary, st.primary) });
 }
 
 export interface OrgRecord {
