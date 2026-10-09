@@ -16,7 +16,8 @@
     "./middleware": "./src/middleware.ts",
     "./bootstrap": "./src/bootstrap.ts",
     "./fleet": "./src/fleet.ts",
-    "./scheduled": "./src/scheduled.ts"
+    "./scheduled": "./src/scheduled.ts",
+    "./auth-ui": "./src/auth-ui.ts"
   },
   "scripts": {
     "selfcheck": "node --no-warnings scripts/selfcheck.ts",
@@ -25,10 +26,18 @@
   "peerDependencies": {
     "emdash": ">=0.30.0",
     "@emdash-cms/cloudflare": "*",
-    "kysely": ">=0.29.0"
+    "kysely": ">=0.29.0",
+    "@better-auth-ui/core": "*",
+    "react": "*"
   },
   "peerDependenciesMeta": {
     "@emdash-cms/cloudflare": {
+      "optional": true
+    },
+    "@better-auth-ui/core": {
+      "optional": true
+    },
+    "react": {
       "optional": true
     }
   },

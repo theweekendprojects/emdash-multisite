@@ -308,7 +308,7 @@ export async function onRequest(context: Ctx, next: Next): Promise<Response> {
 			const entry = loginEntryRedirect(
 				context.url,
 				(await sessionUserId(context)) !== null,
-				sites.postLoginPath ?? DEFAULT_POST_LOGIN_PATH,
+				sites.postLoginPath ?? (sites.accountTab ? "/account/sites" : DEFAULT_POST_LOGIN_PATH),
 			);
 			if (entry) return Response.redirect(new URL(entry, context.url), 302);
 		}
@@ -329,6 +329,9 @@ export async function onRequest(context: Ctx, next: Next): Promise<Response> {
 
 		// Customer console. Pages need a session (shell only, no data); the JSON
 		// is separately gated by the same session.
+		if (method === "GET" && pathname === "/sites" && sites.accountTab) {
+			return redirectTo("/account/sites");
+		}
 		if (method === "GET" && (pathname === "/sites" || pathname === "/sites/new")) {
 			if (!(await sessionUserId(context))) {
 				return Response.redirect(new URL(`/login?redirect=${encodeURIComponent(pathname)}`, context.url), 302);

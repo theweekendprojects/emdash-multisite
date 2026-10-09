@@ -19,6 +19,12 @@ export interface SitesConfig {
 	 * generated from a themes/ directory.
 	 */
 	themes?: Themes;
+	/**
+	 * The host shows "My sites" as a tab in Better Auth UI's account page
+	 * (`/account/sites`, see `emdash-multisite/auth-ui`). `/sites` then redirects
+	 * there and users land on it after signing in.
+	 */
+	accountTab?: boolean;
 	/** Days a deleted site stays restorable before its data is purged. Default 14. */
 	deleteGraceDays?: number;
 	/** Where users land after signing in or up on the control plane. Defaults to `/sites`. */

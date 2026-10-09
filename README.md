@@ -126,6 +126,7 @@ That's the whole integration: install + three wires. No plugin entry, no EmDash 
 | `primary` | `string` (required) | The site that keeps **unprefixed** tables. Use for the control plane / your existing single site. |
 | `wildcard` | `string` | Base domain. `acme.<wildcard>` → site `acme`. |
 | `hosts` | `Record<hostname, siteId>` | Exact hostname → site id, for custom domains and for hosts with no wildcard (e.g. `*.workers.dev`). |
+| `accountTab` | `boolean` | Show "My sites" as the **Sites** tab of Better Auth UI's account page (`/account/sites`); `/sites` redirects there and sign-in lands there. Needs the `auth-ui` plugin above. |
 | `deleteGraceDays` | `number` | Days a deleted site stays restorable before it is purged. Default 14. |
 | `postLoginPath` | `string` | Where users land after signing in or up on the control plane. Default `/sites`. The middleware adds `?redirect=` to `/login`, `/signup`, `/auth/sign-in`, `/auth/sign-up` when none is given, and sends already-signed-in visitors of those pages there. No change to `emdash-better-auth` needed. |
 | `limits` | `{ sitesPerUser?, totalSites? }` | Caps on site creation. Default `{ sitesPerUser: 3 }`; pass `{}` for no caps. See [Creating sites](#creating-sites-limits-and-recovery). |
@@ -371,6 +372,25 @@ primary and then every site whose status is `ready`, one after another, and a fa
 stop the rest. Verified live: scheduled posts on two tenant sites were published by one tick.
 Ceiling: a tick takes about (sites x per-site sweep); upgrade path is a Queue with one message per
 site, fed by the same loop.
+
+## "Sites" as a tab in the account page (Better Auth UI)
+With `emdash-better-auth` >= 0.10.0 the console list can live inside Better Auth UI's account page, next to
+Account and Security: `/account/sites`.
+
+```ts
+// astro.config.mjs
+import { betterAuthUi } from "emdash-better-auth/vite";
+export default defineConfig({
+  vite: { plugins: [betterAuthUi({ plugins: "emdash-multisite/auth-ui" })] },
+  integrations: [emdash({ database: withSites(d1({ binding: "DB" }), { primary: "main", accountTab: true, /* ... */ }) })],
+});
+```
+
+The host also needs `@better-auth-ui/core` (same version as `emdash-better-auth` uses) and `react` as dependencies.
+With `accountTab: true`, `/sites` redirects to `/account/sites` and users land there after signing in. The tab lists
+the user's sites with Open site, Open admin and Appearance, and links to `/sites/new` for the create wizard and to
+`/sites` for Retry and Delete (the old `/sites` page still serves those until they are ported into the tab).
+The tab uses plain React elements and this package's JSON endpoints only, so it has no Better Auth UI hooks.
 
 ## Creating sites, limits and recovery
 Creating a site = creating a Better Auth organization (`POST /api/auth/organization/create`); the
