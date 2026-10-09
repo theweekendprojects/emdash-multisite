@@ -28,11 +28,12 @@ import {
 	warm,
 	writeSiteState,
 } from "./registry.ts";
+import { overLimit } from "./abuse.ts";
 import { sitesConfig } from "./config.ts";
 import { signHandoff, verifyHandoff } from "./handoff.ts";
 import { purgeSite } from "./purge.ts";
 import { siteUrl } from "./sites.ts";
-import { DEFAULT_DELETE_GRACE_DAYS, DEFAULT_LIMITS, DEFAULT_POST_LOGIN_PATH, csrfOk, isPurgeDue, loginEntryRedirect, transition, type SiteState, type StateAction, createProblem, needsReconcile, effectiveTheme, isThemeRouteRequest, isThemed, themeFromMetadata, themeProblem, themeRoute } from "./rules.ts";
+import { lostLimitRace, SIGNUP_PATH, emailDomainBlocked, DEFAULT_DELETE_GRACE_DAYS, DEFAULT_LIMITS, DEFAULT_POST_LOGIN_PATH, csrfOk, isPurgeDue, loginEntryRedirect, transition, type SiteState, type StateAction, createProblem, needsReconcile, effectiveTheme, isThemeRouteRequest, isThemed, themeFromMetadata, themeProblem, themeRoute } from "./rules.ts";
 import { isSiteId } from "./rewrite.ts";
 import { scopeState } from "./scope.ts";
 import { resolveSite, type SitesConfig } from "./sites.ts";
@@ -95,6 +96,29 @@ const json = (body: unknown, status: number) =>
  * Bad address, unverified email, or over a limit. Anonymous callers fall
  * through so Better Auth answers 401 itself.
  */
+/** Provision a just-created site, unless it lost a creation race (see `lostLimitRace`): then it is deleted unprovisioned. */
+async function createOrRejectSite(sites: SitesConfig, org: NonNullable<ReturnType<typeof parseCreatedOrg>>): Promise<void> {
+	const states = await readAllStates();
+	if (lostLimitRace(org.slug, await readOrgs(), new Set([...states].filter(([, v]) => v.state === "deleted").map(([k]) => k)), sites.limits ?? DEFAULT_LIMITS)) {
+		await writeSiteState(org.slug, { state: "deleted", at: new Date().toISOString(), reason: "over the site limit (parallel requests)" });
+		return;
+	}
+	await createSiteForOrg(org, planFor(sites, { theme: org.theme }));
+}
+const tooMany = () =>
+	new Response(JSON.stringify({ code: "RATE_LIMITED", message: "Too many requests. Try again in a minute." }), {
+		status: 429,
+		headers: { "content-type": "application/json", "cache-control": "no-store", "retry-after": "60" },
+	});
+/** Sign-up: refuse throwaway-mail domains, and brake bursts per client IP. Null = let it through. */
+async function guardSignup(ctx: Ctx, sites: SitesConfig): Promise<Response | null> {
+	const body = (await ctx.request.clone().json().catch(() => null)) as { email?: unknown } | null;
+	if (emailDomainBlocked(body?.email, sites.blockedEmailDomains)) {
+		return json({ code: "EMAIL_DOMAIN_BLOCKED", message: "Please sign up with a permanent email address." }, 400);
+	}
+	if (await overLimit("SIGNUP_LIMITER", ctx.request.headers.get("cf-connecting-ip") ?? "unknown")) return tooMany();
+	return null;
+}
 async function guardOrgCreate(ctx: Ctx, sites: SitesConfig): Promise<Response | null> {
 	const { primary } = sites;
 	const limits = sites.limits ?? DEFAULT_LIMITS;
@@ -112,6 +136,7 @@ async function guardOrgCreate(ctx: Ctx, sites: SitesConfig): Promise<Response | 
 
 	const userId = await sessionUserId(ctx);
 	if (!userId) return null;
+	if (await overLimit("CREATE_LIMITER", userId)) return tooMany();
 	const orgs = await readOrgs();
 	const states = await readAllStates();
 	const problem = createProblem(
@@ -418,6 +443,10 @@ export async function onRequest(context: Ctx, next: Next): Promise<Response> {
 			return html(fleetPageHtml(), 200);
 		}
 
+		if (method === "POST" && pathname === SIGNUP_PATH) {
+			const rejected = await guardSignup(context, sites);
+			if (rejected) return rejected;
+		}
 		if (method === "POST" && pathname === ORG_CREATE_PATH) {
 			const rejected = await guardOrgCreate(context, sites);
 			if (rejected) return rejected;
@@ -425,7 +454,7 @@ export async function onRequest(context: Ctx, next: Next): Promise<Response> {
 			if (response.status === 200) {
 				const org = parseCreatedOrg(await response.clone().json().catch(() => null));
 				// Provisioning outlives the response: `after` uses the Worker's waitUntil.
-				if (org) after(() => runAsSite(site, () => createSiteForOrg(org, planFor(sites, { theme: org.theme }))));
+				if (org) after(() => runAsSite(site, () => createOrRejectSite(sites, org)));
 			}
 			return response;
 		}

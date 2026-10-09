@@ -7,10 +7,9 @@
  * ponytail: D1 only (the Node/SQLite host falls back to migrate-and-seed), and one
  * batch, so a template whose clone outgrows D1's batch limits needs chunking.
  */
-// @ts-ignore - provided by the Workers runtime
-import { env } from "cloudflare:workers";
 import { clonePlan, type MasterRow } from "./clone.ts";
 import { d1Binding } from "./config.ts";
+import { platformEnv } from "./platform-env.ts";
 import { templateId } from "./rules.ts";
 
 interface D1 {
@@ -18,9 +17,9 @@ interface D1 {
 	batch(statements: unknown[]): Promise<unknown>;
 }
 
-const d1 = (): D1 | undefined => {
+const d1 = async (): Promise<D1 | undefined> => {
 	const binding = d1Binding();
-	return binding ? ((env as Record<string, unknown>)[binding] as D1 | undefined) : undefined;
+	return binding ? ((await platformEnv())?.[binding] as D1 | undefined) : undefined;
 };
 
 /**
@@ -28,7 +27,7 @@ const d1 = (): D1 | undefined => {
  * last thing `buildTemplate` writes, so a template killed half way does not count.
  */
 export async function hasTemplate(theme: string): Promise<boolean> {
-	const db = d1();
+	const db = await d1();
 	if (!db) return false;
 	const table = `options$${templateId(theme)}`;
 	const q = (sql: string, ...v: unknown[]) => (db.prepare(sql).bind(...v) as ReturnType<D1["prepare"]>).all();
@@ -42,7 +41,7 @@ export async function hasTemplate(theme: string): Promise<boolean> {
  * nothing of `to` exists, so a retry starts clean.
  */
 export async function cloneTemplate(theme: string, to: string): Promise<boolean> {
-	const db = d1();
+	const db = await d1();
 	if (!db || !(await hasTemplate(theme))) return false;
 	const from = templateId(theme);
 	const { results } = await (db.prepare("SELECT type, name, sql FROM sqlite_master WHERE instr(name, ?) > 0").bind(`$${from}`) as ReturnType<D1["prepare"]>).all<MasterRow>();

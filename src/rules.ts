@@ -6,12 +6,47 @@ import { isSiteId } from "./rewrite.ts";
 
 export const ORG_CREATE_PATH = "/api/auth/organization/create";
 
-/** Subdomain labels that must never become customer sites. */
+export const SIGNUP_PATH = "/api/auth/sign-up/email";
+/**
+ * Subdomain labels that must never become customer sites: infrastructure and mail names,
+ * words that make a phishing address look official (`login`, `secure`, `billing`), and
+ * big brands. ponytail: a short list, not a moderation system. Upgrade path: a
+ * `reservedSiteIds` config option, or review at creation for anything borderline.
+ */
 export const RESERVED_SITE_IDS: ReadonlySet<string> = new Set([
 	"www", "app", "api", "admin", "auth", "login", "mail", "smtp", "ftp", "cdn", "static",
 	"assets", "dashboard", "console", "status", "docs", "help", "support", "billing", "internal",
+	"root", "administrator", "webmaster", "postmaster", "hostmaster", "abuse", "security", "noc", "noreply", "no-reply",
+	"ns", "ns1", "ns2", "dns", "mx", "imap", "pop", "pop3", "webmail", "email", "autodiscover", "autoconfig",
+	"account", "accounts", "signin", "sign-in", "signup", "sign-up", "register", "verify", "oauth", "sso", "secure",
+	"pay", "payment", "payments", "checkout", "wallet", "bank", "invoice",
+	"staging", "stage", "dev", "preview", "sandbox", "beta", "alpha", "prod", "production", "origin", "edge",
+	"media", "files", "upload", "uploads", "download", "downloads", "img", "images", "storage",
+	"legal", "privacy", "terms", "sales", "staff",
+	"cloudflare", "emdash", "astro", "google", "microsoft", "apple", "amazon", "facebook", "meta", "paypal", "stripe", "github",
 ]);
-
+/**
+ * Throwaway-mail domains. Sign-up with one of these is refused, so a bot cannot mint
+ * accounts (each able to create sites) from an inbox it never reads.
+ * ponytail: a seed list that goes stale. Upgrade path: a maintained list, or Turnstile.
+ */
+export const DISPOSABLE_EMAIL_DOMAINS: ReadonlySet<string> = new Set([
+	"mailinator.com", "guerrillamail.com", "guerrillamail.net", "guerrillamail.org", "sharklasers.com", "grr.la",
+	"10minutemail.com", "10minutemail.net", "tempmail.com", "temp-mail.org", "temp-mail.io", "tempmailo.com",
+	"throwawaymail.com", "yopmail.com", "yopmail.net", "trashmail.com", "trashmail.net", "getnada.com", "nada.email",
+	"maildrop.cc", "dispostable.com", "fakeinbox.com", "mailnesia.com", "mintemail.com", "mohmal.com", "emailondeck.com",
+	"spamgourmet.com", "mytemp.email", "tempinbox.com", "burnermail.io", "moakt.com", "discard.email", "tmpmail.org",
+]);
+/** True when the address's domain (or a parent of it) is on the built-in list or in `extra`. */
+export function emailDomainBlocked(email: unknown, extra: readonly string[] = []): boolean {
+	if (typeof email !== "string") return false;
+	const at = email.lastIndexOf("@");
+	if (at < 0) return false;
+	const labels = email.slice(at + 1).trim().toLowerCase().split(".");
+	const blocked = new Set([...DISPOSABLE_EMAIL_DOMAINS, ...extra.map((d) => d.toLowerCase())]);
+	// "a.b.mailinator.com" is blocked by "mailinator.com".
+	return labels.some((_, i) => blocked.has(labels.slice(i).join(".")));
+}
 /** Template sites (a pre-built copy per theme that new sites are cloned from) live under this prefix. */
 export const TEMPLATE_PREFIX = "tpl-";
 export const templateId = (theme: string): string => `${TEMPLATE_PREFIX}${theme}`;
@@ -110,6 +145,29 @@ export function createProblem(c: CreateContext, limits: Limits = DEFAULT_LIMITS)
 		return { status: 503, code: "PLATFORM_FULL", message: "New sites are paused right now. Please try again later." };
 	}
 	return null;
+}
+
+/**
+ * Did this freshly created site lose a race against its owner's other creations?
+ * `createProblem` runs BEFORE Better Auth creates the org, so parallel requests all see
+ * "0 owned" and all pass. Run again AFTER creation: sites are ranked by creation time
+ * (slug breaks ties, so every parallel request ranks them the same way), and a site
+ * ranked past the limit loses. Deleted sites do not count.
+ */
+export function lostLimitRace(
+	slug: string,
+	orgs: ReadonlyArray<{ slug: string; ownerUserId: string | null; createdAt: string | null }>,
+	deleted: ReadonlySet<string>,
+	limits: Limits = DEFAULT_LIMITS,
+): boolean {
+	const order = (a: { slug: string; createdAt: string | null }, b: { slug: string; createdAt: string | null }) =>
+		(a.createdAt ?? "").localeCompare(b.createdAt ?? "") || a.slug.localeCompare(b.slug);
+	const live = orgs.filter((o) => !deleted.has(o.slug)).sort(order);
+	const me = live.find((o) => o.slug === slug);
+	if (!me) return false;
+	const mine = live.filter((o) => o.ownerUserId === me.ownerUserId);
+	if (limits.sitesPerUser !== undefined && mine.indexOf(me) >= limits.sitesPerUser) return true;
+	return limits.totalSites !== undefined && live.indexOf(me) >= limits.totalSites;
 }
 
 // ---- recovery --------------------------------------------------------------

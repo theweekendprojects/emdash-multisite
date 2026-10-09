@@ -1,5 +1,5 @@
 /** Pure-logic checks for the org -> site hook: `node --no-warnings scripts/orgs.selfcheck.ts` */
-import { BUNDLED_THEME, mediaKey, unmediaKey, DEFAULT_LIMITS, createProblem, csrfOk, isPurgeDue, isTableOfSite, parseSiteState, transition, isLocalPath, loginEntryRedirect, seedCollections, switchSummary, effectiveTheme, needsReconcile, isThemeRouteRequest, isThemed, parseCreatedOrg, slugProblem, themeFromMetadata, themeProblem, themeRoute } from "../src/rules.ts";
+import { lostLimitRace, emailDomainBlocked, BUNDLED_THEME, mediaKey, unmediaKey, DEFAULT_LIMITS, createProblem, csrfOk, isPurgeDue, isTableOfSite, parseSiteState, transition, isLocalPath, loginEntryRedirect, seedCollections, switchSummary, effectiveTheme, needsReconcile, isThemeRouteRequest, isThemed, parseCreatedOrg, slugProblem, themeFromMetadata, themeProblem, themeRoute } from "../src/rules.ts";
 import { isSiteId } from "../src/rewrite.ts";
 
 let failed = 0;
@@ -131,5 +131,15 @@ check("another site's tables are not claimed", ["ec_posts$acme-co", "users$acme2
 check("slug with hyphen", [isTableOfSite("ec_pages$bobs-blog", "bobs-blog"), isTableOfSite("ec_pages$bobs-blog", "blog")], [true, false]);
 check("media key prefix round trip", [mediaKey("acme", "a/b.png"), unmediaKey("acme", "acme/a/b.png")], ["acme/a/b.png", "a/b.png"]);
 check("another site's media key is not claimed", [unmediaKey("acme", "acme-co/a.png"), unmediaKey("acme", "other/acme/a.png")], [null, null]);
+check("disposable domains are blocked, also as subdomains and in any case", ["a@mailinator.com", "a@MAILINATOR.com", "a@x.y.guerrillamail.com"].map((e) => emailDomainBlocked(e)), [true, true, true]);
+check("normal and lookalike domains pass", ["a@gmail.com", "a@notmailinator.com", "a@mailinator.com.au", "nope", 5].map((e) => emailDomainBlocked(e)), [false, false, false, false, false]);
+check("extra blocked domains", [emailDomainBlocked("a@bad.example", ["bad.example"]), emailDomainBlocked("a@good.example", ["bad.example"])], [true, false]);
+check("reserved: phishing and infra names refused, ordinary names not", ["secure", "paypal", "webmail", "blog", "bobs-bakery"].map((s) => slugProblem(s, "main") !== null), [true, true, true, false, false]);
+const mk = (slug: string, owner: string, at: string) => ({ slug, ownerUserId: owner, createdAt: at });
+const raced = ["a", "b", "c", "d", "e"].map((x, i) => mk(x, "u1", `2026-10-01T00:00:0${i}Z`));
+check("race: first three win, the rest lose (limit 3)", raced.map((o) => lostLimitRace(o.slug, raced, new Set(), { sitesPerUser: 3 })), [false, false, false, true, true]);
+check("race: same timestamp ranks by slug, same answer for every caller", ["x", "y"].map((x) => lostLimitRace(x, [mk("x", "u1", "t"), mk("y", "u1", "t")], new Set(), { sitesPerUser: 1 })), [false, true]);
+check("race: deleted sites and other owners do not count", lostLimitRace("c", [mk("a", "u1", "1"), mk("b", "u1", "2"), mk("c", "u1", "3"), mk("z", "u2", "0")], new Set(["a"]), { sitesPerUser: 2 }), false);
+check("race: platform cap", [lostLimitRace("a", [mk("a", "u1", "1"), mk("b", "u2", "2")], new Set(), { totalSites: 1 }), lostLimitRace("b", [mk("a", "u1", "1"), mk("b", "u2", "2")], new Set(), { totalSites: 1 })], [false, true]);
 console.log(failed ? `\n${failed} FAILED` : "\nall passed");
 process.exit(failed ? 1 : 0);

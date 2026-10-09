@@ -11,6 +11,8 @@ export interface SitesConfig {
 	wildcard?: string;
 	/** Caps on site creation. Defaults to 3 sites per user, no platform cap. */
 	limits?: Limits;
+	/** Extra email domains refused at sign-up, on top of the built-in disposable-mail list. */
+	blockedEmailDomains?: string[];
 	/**
 	 * Themes a new site can pick, each with its seed. Omit for a single theme
 	 * (the host's bundled seed).
@@ -52,6 +54,9 @@ export function assertSitesConfig(c: SitesConfig): void {
 	}
 	for (const [k, v] of Object.entries(c.limits ?? {})) {
 		if (v !== undefined && (!Number.isInteger(v) || v < 0)) throw new Error(`[multisite] limits.${k} must be a non-negative integer`);
+	}
+	if (c.blockedEmailDomains && !c.blockedEmailDomains.every((d) => typeof d === "string" && /^[a-z0-9.-]+\.[a-z]{2,}$/i.test(d))) {
+		throw new Error("[multisite] blockedEmailDomains must be domain names like example.com");
 	}
 	for (const [host, id] of Object.entries(c.hosts ?? {})) {
 		if (!isSiteId(id)) throw new Error(`[multisite] invalid site id for ${host}: ${id}`);

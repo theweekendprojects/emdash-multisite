@@ -342,6 +342,20 @@ With no `themes` configured nothing is rewritten and the host's own pages serve 
 Seeds are applied with `skipMediaDownload` (downloading images would also eat the provisioning time
 budget), so seed images are skipped.
 
+## Abuse controls
+Sign-up is open, and every account can create sites (~90 D1 tables each), so there are four brakes:
+- **Throwaway mail**: sign-up with a disposable-mail domain is refused (`EMAIL_DOMAIN_BLOCKED`, 400). A built-in
+  list plus `blockedEmailDomains: ["bad.example"]` in the config. Subdomains match (`x.mailinator.com`).
+- **Reserved names**: infrastructure, mail, "looks official" (`secure`, `webmail`, `billing`) and big-brand names
+  cannot become sites (`RESERVED_SITE_IDS` in `rules.ts`; the `tpl-` prefix is reserved for templates).
+- **Rate limits** (optional): declare Cloudflare Rate Limiting bindings `SIGNUP_LIMITER` (per client IP) and
+  `CREATE_LIMITER` (per user) in `wrangler.jsonc`; exceeding them returns 429. Without the bindings nothing is limited.
+  Counters are per Cloudflare location and periods are 10 or 60 s, so they stop bursts, not slow trickles.
+- **Site limits hold under parallel requests**: the limit check runs before Better Auth creates the organization, so
+  parallel requests all passed it. It now runs again after creation; a site ranked past `sitesPerUser` or `totalSites`
+  (by creation time) is deleted unprovisioned (`lostLimitRace`).
+Turnstile (needs a site key from the production domain) and alerting on `totalSites` are not built yet.
+
 ## Templates (fast site creation)
 Migrating and seeding a new site takes ~70 s. With a **template** it takes ~4 s: staff build one template
 site per theme once (`POST /api/multisite/templates {"theme":"blog"}`, ~30 s, runs inside the request), stored as
