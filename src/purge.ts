@@ -41,32 +41,34 @@ export async function purgeSite(slug: string): Promise<{ dropped: number; remain
 	const primary = scopeState().primary;
 
 	return runAsSite(primary, async () => {
-		const all = await sql<{ name: string }>`SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE '%$%'`.execute(db);
-		let todo = all.rows.map((r) => r.name).filter((n) => isTableOfSite(n, slug));
+		// Tables of this site that exist right now. Listed again on every pass: dropping a table
+		// can remove others (full-text shadows) and the stand-in below can create one.
+		const list = async () =>
+			(await sql<{ name: string }>`SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE '%$%'`.execute(db)).rows
+				.map((r) => r.name)
+				.filter((n) => isTableOfSite(n, slug));
 		let dropped = 0;
+		let todo = await list();
 		// Foreign keys point child -> parent, so a parent cannot be dropped while children
-		// exist. Keep making passes until nothing more can be dropped.
+		// (with rows, in a cloned site) exist. Keep making passes until nothing more drops.
 		for (let pass = 0; pass < 6 && todo.length; pass++) {
-			const failed: string[] = [];
+			let progress = false;
 			for (const name of todo) {
 				// A full-text drop removes its shadow tables too, so one may already be gone.
 				const stillThere = await sql<{ n: number }>`SELECT COUNT(*) AS n FROM sqlite_master WHERE name = ${name}`.execute(db);
-				if (!Number(stillThere.rows[0]?.n)) {
-					dropped++;
-					continue;
-				}
+				if (!Number(stillThere.rows[0]?.n)) continue;
 				try {
 					await dropTable(db, slug, name);
 					dropped++;
+					progress = true;
 				} catch {
-					failed.push(name);
+					// left for the next pass
 				}
 			}
-			if (failed.length === todo.length) break;
-			todo = failed;
+			todo = await list();
+			if (!progress) break;
 		}
 		if (todo.length) return { dropped, remaining: todo.length };
-
 		// Uploaded files (shared bucket, one key prefix per site).
 		await purgeSiteMedia(slug);
 		// Organization and its members/invitations/teams on the control plane.

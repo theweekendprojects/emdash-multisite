@@ -6,6 +6,7 @@ import { isStaff, listSites } from "./fleet.ts";
 import { fleetPageHtml } from "./fleet-page.ts";
 import {
 	ORG_CREATE_PATH,
+	buildTemplate,
 	createSiteForOrg,
 	parseCreatedOrg,
 	pendingReconcile,
@@ -67,6 +68,7 @@ interface Ctx {
 
 const STATUS_PREFIX = "/api/multisite/sites/";
 const RECONCILE_API = "/api/multisite/reconcile";
+const TEMPLATES_API = "/api/multisite/templates";
 const FLEET_API = "/api/multisite/fleet";
 const FLEET_PAGE = "/admin/fleet";
 const forbidden = () => new Response(JSON.stringify({ code: "CSRF", message: "Missing or cross-site request." }), {
@@ -383,6 +385,19 @@ export async function onRequest(context: Ctx, next: Next): Promise<Response> {
 			const slugs = await pendingReconcile();
 			if (slugs.length) after(async () => void (await runAsSite(site, () => reconcile(sites))));
 			return json({ pending: slugs, started: slugs[0] ?? null }, 202);
+		}
+
+		// Staff: build the template site of ONE theme (`{ theme }`). Runs inside the request, not in the
+		// background: it takes ~70 s, longer than the ~30 s a background task gets. New sites of that theme
+		// are then cloned from it (seconds) instead of migrated and seeded.
+		if (method === "POST" && pathname === TEMPLATES_API) {
+			if (!csrfOk(context.request.headers, context.url.origin)) return forbidden();
+			if (!(await isStaff(await sessionUserId(context)))) return json({ code: "FORBIDDEN" }, 403);
+			const body = (await context.request.json().catch(() => null)) as { theme?: unknown } | null;
+			const theme = typeof body?.theme === "string" ? body.theme : "";
+			const started = Date.now();
+			const result = await runAsSite(site, () => buildTemplate(sites, theme));
+			return json({ theme, result, ms: Date.now() - started }, result === "unknown-theme" ? 400 : 200);
 		}
 
 		// Fleet view — staff only (role 50 on the control plane). The keys to the

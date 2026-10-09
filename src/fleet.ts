@@ -14,6 +14,7 @@
 import { Kysely, sql } from "kysely";
 import { siteDialect, runAsSite } from "./dialect.ts";
 import { isSiteId, isSiteTable } from "./rewrite.ts";
+import { isTemplateId } from "./rules.ts";
 import { scopeState } from "./scope.ts";
 import type { SiteStatus } from "./orgs.ts";
 import { readAllStates } from "./registry.ts";
@@ -67,7 +68,7 @@ export async function listSites(): Promise<FleetSite[]> {
 			.map((r) => r.name)
 			.filter((n) => n.startsWith("users$"))
 			.map((n) => n.slice("users$".length))
-			.filter(isSiteId);
+			.filter((id) => isSiteId(id) && !isTemplateId(id));
 
 		// Org name/slug/createdAt + owner, from Better Auth storage on the primary.
 		const orgs = await sql<{ data: string }>`

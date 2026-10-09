@@ -342,6 +342,16 @@ With no `themes` configured nothing is rewritten and the host's own pages serve 
 Seeds are applied with `skipMediaDownload` (downloading images would also eat the provisioning time
 budget), so seed images are skipped.
 
+## Templates (fast site creation)
+Migrating and seeding a new site takes ~70 s. With a **template** it takes ~4 s: staff build one template
+site per theme once (`POST /api/multisite/templates {"theme":"blog"}`, ~30 s, runs inside the request), stored as
+site `tpl-<theme>` (the `tpl-` prefix is reserved and hidden from the fleet). A new site then copies it in
+one D1 batch: the template's `CREATE` statements with the suffix swapped, then `INSERT ... SELECT` per table, then
+triggers; the owner, title and options are patched afterwards. The batch is atomic, so a failure leaves nothing.
+Without a complete template (or on the Node/SQLite host) creation falls back to migrate-and-seed. After an
+EmDash upgrade the template is stale until rebuilt (drop it, build again); sites created from it still run any newer
+migrations like any older site. D1 only. Script: `multisite-smoke/scripts/build-templates.mjs`.
+
 ## Media (uploads)
 `emdash-multisite/storage` wraps the R2 storage: every key gets a `<site>/` prefix on write and read,
 and listings only return the active site's keys. Keys in a site's `media` table stay unprefixed. The

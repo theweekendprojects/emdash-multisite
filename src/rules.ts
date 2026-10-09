@@ -12,13 +12,18 @@ export const RESERVED_SITE_IDS: ReadonlySet<string> = new Set([
 	"assets", "dashboard", "console", "status", "docs", "help", "support", "billing", "internal",
 ]);
 
+/** Template sites (a pre-built copy per theme that new sites are cloned from) live under this prefix. */
+export const TEMPLATE_PREFIX = "tpl-";
+export const templateId = (theme: string): string => `${TEMPLATE_PREFIX}${theme}`;
+export const isTemplateId = (id: string): boolean => id.startsWith(TEMPLATE_PREFIX);
+
 /** `null` when the slug can be a site id, otherwise a human-readable reason. */
 export function slugProblem(slug: unknown, primary: string): string | null {
 	if (typeof slug !== "string" || slug.length === 0) return "Choose a name for your site address.";
 	if (!isSiteId(slug)) {
 		return "Use 1-40 lowercase letters, digits or hyphens, starting and ending with a letter or digit.";
 	}
-	if (slug === primary || RESERVED_SITE_IDS.has(slug)) return `"${slug}" is reserved. Choose another address.`;
+	if (slug === primary || RESERVED_SITE_IDS.has(slug) || isTemplateId(slug)) return `"${slug}" is reserved. Choose another address.`;
 	return null;
 }
 

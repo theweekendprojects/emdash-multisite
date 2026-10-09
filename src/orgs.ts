@@ -14,11 +14,12 @@ import { applySeed } from "emdash";
 import { userSeed } from "virtual:emdash/seed";
 import { runAsSite } from "./dialect.ts";
 import { isSiteId } from "./rewrite.ts";
-import { BUNDLED_THEME, STALE_PROVISIONING_MS, effectiveTheme, needsReconcile, themeFromMetadata, type ProvisionStep, type SiteStatus } from "./rules.ts";
+import { BUNDLED_THEME, STALE_PROVISIONING_MS, templateId, effectiveTheme, needsReconcile, themeFromMetadata, type ProvisionStep, type SiteStatus } from "./rules.ts";
 import type { SitesConfig } from "./sites.ts";
 import { controlDb, forgetSiteTheme, readAllStates, readOrgs, readSiteTheme, siteHasTables } from "./registry.ts";
 import { scopeState } from "./scope.ts";
 import { provisionWith } from "./provision.ts";
+import { cloneTemplate, hasTemplate } from "./clone-run.ts";
 
 export { ORG_CREATE_PATH, RESERVED_SITE_IDS, parseCreatedOrg, slugProblem, type SiteStatus } from "./rules.ts";
 
@@ -56,6 +57,45 @@ async function releaseStaleLock(db: ReturnType<typeof controlDb>, slug: string):
 }
 
 /**
+ * A site's tables (core migrations, run as that site) and its starter content.
+ * Migrations alone leave an empty schema with no collections, so without the
+ * seed a new tenant has nothing to edit. core's applySeed upserts, so a retry is
+ * safe. Media is not downloaded: see "Media (uploads)" in the README.
+ */
+async function buildSchemaAndSeed(
+	db: ReturnType<typeof controlDb>,
+	slug: string,
+	seed: unknown,
+	done?: (ended: ProvisionStep, next?: ProvisionStep) => Promise<void>,
+): Promise<void> {
+	await provisionWith(db, slug);
+	await done?.("tables", "content");
+	if (seed) {
+		// eslint-disable-next-line typescript/no-explicit-any -- core types its own Database/Seed
+		await runAsSite(slug, () => applySeed(db as any, seed as any, { includeContent: true, skipMediaDownload: true }));
+	}
+}
+
+/**
+ * Build the template site for a theme (`tpl-<theme>`): the pre-built copy that new
+ * sites are cloned from. Slow (the full migrate-and-seed), so run it once, not per
+ * customer. It has no owner and no organization. Refuses to overwrite.
+ * ponytail: rebuilding after an EmDash upgrade needs a drop first (OP-22).
+ */
+export async function buildTemplate(sites: SitesConfig, theme: string): Promise<"built" | "exists" | "unknown-theme"> {
+	const seed = sites.themes?.[theme]?.seed;
+	if (!seed) return "unknown-theme";
+	if (await hasTemplate(theme)) return "exists";
+	const slug = templateId(theme);
+	await buildSchemaAndSeed(controlDb(), slug, seed);
+	await runAsSite(slug, async () => {
+		await sql`INSERT INTO options (name, value) VALUES ('multisite:theme', ${JSON.stringify(theme)})
+			ON CONFLICT(name) DO UPDATE SET value = excluded.value`.execute(controlDb());
+	});
+	return "built";
+}
+
+/**
  * Create the site `slug` and hand it to `ownerUserId`. Idempotent: running it
  * again on a half-provisioned site completes it.
  */
@@ -83,22 +123,15 @@ export async function createSiteForOrg(
 		//    lock old enough that its owner is certainly gone.
 		await releaseStaleLock(db, org.slug);
 
-		// 1. the site's tables (core migrations, run as the new site)
-		await provisionWith(db, org.slug);
-		await done("tables", "content");
-
-		// 1b. seed the new site with its theme's seed (collections + starter
-		//     content), or the host's bundled seed when no themes are configured.
-		//     Migrations alone leave an empty schema with no collections, so
-		//     without this a new tenant has nothing to edit. core's applySeed
-		//     upserts, so a retry is safe. Media is not downloaded: object
-		//     storage is shared, not per-site (see AGENTS.md).
-		const seed = plan.seed ?? userSeed;
-		if (seed) {
-			// eslint-disable-next-line typescript/no-explicit-any -- core types its own Database/Seed
-			await runAsSite(org.slug, () => applySeed(db as any, seed as any, { includeContent: true, skipMediaDownload: true }));
+		// 1. the site's tables and starter content: copied from the theme's template in one
+		//    D1 batch when there is one, else core migrations + the theme's seed (slow: ~70 s).
+		//    A site that already has tables is a retry of a partial run; it takes the slow path.
+		const cloned = !(await siteHasTables(org.slug)) && (await cloneTemplate(plan.theme, org.slug));
+		if (cloned) {
+			await done("tables", "content");
+		} else {
+			await buildSchemaAndSeed(db, org.slug, plan.seed ?? userSeed, done);
 		}
-
 		await done("content", "identity");
 		// 2. read the owner's identity and platform auth policy from the control plane
 		const { owner, storage, inherited } = await runAsSite(st.primary, async () => {
