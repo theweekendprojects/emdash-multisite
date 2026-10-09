@@ -30,6 +30,7 @@ import {
 	writeSiteState,
 } from "./registry.ts";
 import { overLimit } from "./abuse.ts";
+import { log } from "./log.ts";
 import { PASSWORD_PATHS, syncRecentPasswords } from "./passwords.ts";
 import { backupSite, listBackups, restoreSite } from "./backup.ts";
 import { sitesConfig } from "./config.ts";
@@ -103,6 +104,7 @@ const json = (body: unknown, status: number) =>
 async function createOrRejectSite(sites: SitesConfig, org: NonNullable<ReturnType<typeof parseCreatedOrg>>): Promise<void> {
 	const states = await readAllStates();
 	if (lostLimitRace(org.slug, await readOrgs(), new Set([...states].filter(([, v]) => v.state === "deleted").map(([k]) => k)), sites.limits ?? DEFAULT_LIMITS)) {
+		log("create.race_lost", { site: org.slug, user: org.ownerUserId });
 		await writeSiteState(org.slug, { state: "deleted", at: new Date().toISOString(), reason: "over the site limit (parallel requests)" });
 		return;
 	}
@@ -117,9 +119,13 @@ const tooMany = () =>
 async function guardSignup(ctx: Ctx, sites: SitesConfig): Promise<Response | null> {
 	const body = (await ctx.request.clone().json().catch(() => null)) as { email?: unknown } | null;
 	if (emailDomainBlocked(body?.email, sites.blockedEmailDomains)) {
+		log("signup.blocked_domain");
 		return json({ code: "EMAIL_DOMAIN_BLOCKED", message: "Please sign up with a permanent email address." }, 400);
 	}
-	if (await overLimit("SIGNUP_LIMITER", ctx.request.headers.get("cf-connecting-ip") ?? "unknown")) return tooMany();
+	if (await overLimit("SIGNUP_LIMITER", ctx.request.headers.get("cf-connecting-ip") ?? "unknown")) {
+		log("signup.rate_limited");
+		return tooMany();
+	}
 	return null;
 }
 async function guardOrgCreate(ctx: Ctx, sites: SitesConfig): Promise<Response | null> {
@@ -139,7 +145,10 @@ async function guardOrgCreate(ctx: Ctx, sites: SitesConfig): Promise<Response | 
 
 	const userId = await sessionUserId(ctx);
 	if (!userId) return null;
-	if (await overLimit("CREATE_LIMITER", userId)) return tooMany();
+	if (await overLimit("CREATE_LIMITER", userId)) {
+		log("create.rate_limited", { user: userId });
+		return tooMany();
+	}
 	const orgs = await readOrgs();
 	const states = await readAllStates();
 	const problem = createProblem(

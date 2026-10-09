@@ -11,6 +11,7 @@
  */
 import { sql } from "kysely";
 import { runAsSite } from "./dialect.ts";
+import { log } from "./log.ts";
 import { controlDb, readAllStates, readOrgs } from "./registry.ts";
 import { scopeState } from "./scope.ts";
 
@@ -54,5 +55,6 @@ export async function syncRecentPasswords(withinMs: number): Promise<number> {
 			).then(() => n++, (error) => console.error(`[multisite] password sync to "${org.slug}" failed:`, error));
 		}
 	}
+	if (n) log("password.synced", { copies: n });
 	return n;
 }

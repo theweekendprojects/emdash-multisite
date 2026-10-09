@@ -342,6 +342,13 @@ With no `themes` configured nothing is rewritten and the host's own pages serve 
 Seeds are applied with `skipMediaDownload` (downloading images would also eat the provisioning time
 budget), so seed images are skipped.
 
+## Logs
+Notable events are written as one JSON line each (`src/log.ts`): `site.ready` (site, theme, whether it was cloned, total
+ms, per-step timings), `site.failed`, `template.built`, `backup.saved`, `backup.restored`, `site.purged`,
+`signup.blocked_domain`, `signup.rate_limited`, `create.rate_limited`, `create.race_lost`, `password.synced`. Turn on
+Workers Logs with `"observability": { "enabled": true }` in `wrangler.jsonc` to search and count them in the dashboard
+(`wrangler tail` shows them live). No secrets, passwords or full email addresses are logged.
+
 ## Using the package (private distribution)
 The package is private and not on npm. A host installs it from this repository, pinned by tag:
 `"emdash-multisite": "github:theweekendprojects/emdash-multisite#v0.1.0"` (install verified: npm fetches the tag and

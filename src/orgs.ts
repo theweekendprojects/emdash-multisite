@@ -19,6 +19,7 @@ import type { SitesConfig } from "./sites.ts";
 import { controlDb, forgetSiteTheme, readAllStates, readOrgs, readSiteTheme, siteHasTables } from "./registry.ts";
 import { scopeState } from "./scope.ts";
 import { provisionWith } from "./provision.ts";
+import { log } from "./log.ts";
 import { cloneTemplate, hasTemplate } from "./clone-run.ts";
 import { dropSiteTables } from "./purge.ts";
 
@@ -98,6 +99,7 @@ export async function buildTemplate(sites: SitesConfig, theme: string, opts: { r
 		await sql`INSERT INTO options (name, value) VALUES ('multisite:theme', ${JSON.stringify(theme)})
 			ON CONFLICT(name) DO UPDATE SET value = excluded.value`.execute(controlDb());
 	});
+	log("template.built", { theme });
 	return "built";
 }
 
@@ -179,8 +181,10 @@ export async function createSiteForOrg(
 
 		await done("identity");
 		await writeStatus(org.slug, { status: "ready", startedAt, readyAt: new Date().toISOString(), timings });
+		log("site.ready", { site: org.slug, theme: plan.theme, cloned, ms: Date.now() - Date.parse(startedAt), timings });
 	} catch (error) {
 		console.error(`[multisite] provisioning "${org.slug}" failed:`, error);
+		log("site.failed", { site: org.slug, error: error instanceof Error ? error.message : String(error) });
 		await writeStatus(org.slug, {
 			status: "failed",
 			startedAt,

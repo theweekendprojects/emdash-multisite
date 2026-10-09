@@ -16,6 +16,7 @@
 import { sql } from "kysely";
 import { clonePlan, insertStatements, retarget, type MasterRow } from "./clone.ts";
 import { d1, type D1 } from "./clone-run.ts";
+import { log } from "./log.ts";
 import { runAsSite } from "./dialect.ts";
 import { mediaBucket, type Bucket } from "./media-bucket.ts";
 import { dropSiteTables } from "./purge.ts";
@@ -75,6 +76,7 @@ export async function saveBackup(backup: Backup, tag?: string): Promise<{ key: s
 		sql`INSERT INTO options (name, value) VALUES (${lastKey(backup.slug)}, ${JSON.stringify(backup.createdAt)})
 			ON CONFLICT(name) DO UPDATE SET value = excluded.value`.execute(controlDb()),
 	);
+	log("backup.saved", { site: backup.slug, key, bytes: body.length });
 	return { key, bytes: body.length };
 }
 
@@ -130,5 +132,6 @@ export async function restoreSite(slug: string, key: string, opts: { replace: bo
 	const statements = ["PRAGMA defer_foreign_keys = ON", ...backup.schema, ...backup.data, ...backup.triggers].map((s) => retarget(s, backup.slug, slug));
 	await db.batch(statements.map((s) => db.prepare(s)));
 	forgetSiteTheme(slug);
+	log("backup.restored", { site: slug, key, replace: opts.replace });
 	return "restored";
 }
