@@ -52,6 +52,19 @@ async function buildPage(toast?: Page["toast"]): Promise<Page> {
 			type: "context",
 			text: "Switching keeps all of your content. Anything the new theme does not show is hidden, and comes back if you switch back.",
 		});
+		if (sites.appUrl) {
+			blocks.push({
+				type: "actions",
+				elements: [
+					{
+						type: "link" as const,
+						label: "Browse themes as cards",
+						target: { kind: "external" as const, url: `${sites.appUrl}/sites/${state.slug}/appearance` },
+						appearance: "secondary" as const,
+					},
+				],
+			});
+		}
 		const others = state.themes.filter((t) => !t.current);
 		for (const t of others) {
 			const parts = [t.adds.length ? `adds ${t.adds.join(", ")}` : "", t.hides.length ? `hides ${t.hides.join(", ")}` : ""].filter(Boolean);
