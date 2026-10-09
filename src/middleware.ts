@@ -329,8 +329,8 @@ export async function onRequest(context: Ctx, next: Next): Promise<Response> {
 
 		// Customer console. Pages need a session (shell only, no data); the JSON
 		// is separately gated by the same session.
-		if (method === "GET" && pathname === "/sites" && sites.accountTab) {
-			return redirectTo("/account/sites");
+		if (method === "GET" && sites.accountTab && (pathname === "/sites" || pathname === "/sites/new")) {
+			return redirectTo(pathname === "/sites" ? "/account/sites" : "/account/sites?new=1");
 		}
 		if (method === "GET" && (pathname === "/sites" || pathname === "/sites/new")) {
 			if (!(await sessionUserId(context))) {
