@@ -15,7 +15,7 @@ import {
 	slugProblem,
 } from "./orgs.ts";
 import { isEmailVerified, readOrgs, readSiteTheme, warm } from "./registry.ts";
-import { DEFAULT_LIMITS, createProblem, effectiveTheme, isThemeRouteRequest, isThemed, themeFromMetadata, themeProblem, themeRoute } from "./rules.ts";
+import { DEFAULT_LIMITS, createProblem, needsReconcile, effectiveTheme, isThemeRouteRequest, isThemed, themeFromMetadata, themeProblem, themeRoute } from "./rules.ts";
 import { isSiteId } from "./rewrite.ts";
 import { scopeState } from "./scope.ts";
 import { resolveSite, type SitesConfig } from "./sites.ts";
@@ -149,6 +149,12 @@ export async function onRequest(context: Ctx, next: Next): Promise<Response> {
 			const slug = pathname.slice(STATUS_PREFIX.length);
 			if (!isSiteId(slug)) return json({ code: "NOT_FOUND" }, 404);
 			const status = await readStatus(slug);
+			// Self-heal: whoever is watching a site whose run died restarts it, so a
+			// killed run costs about a minute instead of a stuck site. Signed-in callers
+			// only: the status URL is otherwise public.
+			if (status?.status === "provisioning" && needsReconcile(status, Date.now()) && (await sessionUserId(context))) {
+				after(async () => void (await runAsSite(site, () => reconcile(sites, slug))));
+			}
 			return status ? json(status, 200) : json({ code: "NOT_FOUND" }, 404);
 		}
 
@@ -163,7 +169,10 @@ export async function onRequest(context: Ctx, next: Next): Promise<Response> {
 		if (method === "GET" && pathname === "/api/multisite/me") {
 			const userId = await sessionUserId(context);
 			if (!userId) return json({ code: "UNAUTHORIZED" }, 401);
-			return json(await consoleState(userId, sites), 200);
+			const state = await consoleState(userId, sites);
+			const stalled = state.sites.find((x) => x.status === "provisioning" && x.canRetry);
+			if (stalled) after(async () => void (await runAsSite(site, () => reconcile(sites, stalled.slug))));
+			return json(state, 200);
 		}
 		// Themes a new site can pick (no seeds: those stay on the server).
 		if (method === "GET" && pathname === "/api/multisite/themes") {

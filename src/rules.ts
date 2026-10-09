@@ -98,8 +98,12 @@ export function createProblem(c: CreateContext, limits: Limits = DEFAULT_LIMITS)
 
 // ---- recovery --------------------------------------------------------------
 
-/** A `provisioning` row older than this is a run that died (Worker evicted). */
-export const STALE_PROVISIONING_MS = 5 * 60_000;
+/**
+ * A `provisioning` row older than this is a run that died. Work after a
+ * response (`waitUntil`) gets ~30 s, and a theme with a lot of starter content
+ * (the blog seed) can need more, so a live run is never older than ~40 s.
+ */
+export const STALE_PROVISIONING_MS = 60_000;
 
 /** Should provisioning run (again) for a site with this status? */
 export function needsReconcile(status: SiteStatus | null, now: number, staleMs = STALE_PROVISIONING_MS): boolean {

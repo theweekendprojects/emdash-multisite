@@ -226,6 +226,15 @@ runtime, every query) reads it from ALS/the request db. There is no per-call sit
   the code of the version the alias was last uploaded with, not the deployed one. After a deploy,
   re-upload each alias you are testing against.
 
+- **A live provisioning run is never older than ~40 s.** The post-response budget is ~30 s, so
+  `STALE_PROVISIONING_MS` is 60 s. A signed-in poll of `/api/multisite/sites/<slug>` or
+  `/api/multisite/me` restarts a stale run (anonymous polls do not: that URL is public).
+  Big seeds (blog) can exceed the budget; retry resumes in seconds because provisioning is
+  idempotent. Real fix is stepwise provisioning (backlog OP-28).
+- **Browser testing tip:** full-page screenshots of these sites can exceed the tool's image
+  size limit and abort the run. Resize to 1000x640 and take JPEG viewport shots, read state
+  with `evaluate`, and wait for images/fonts before judging a page "empty".
+
 ## How to verify a change (always do this)
 
 Run with Node ≥ 22.18:
