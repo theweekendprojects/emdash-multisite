@@ -342,6 +342,15 @@ With no `themes` configured nothing is rewritten and the host's own pages serve 
 Seeds are applied with `skipMediaDownload` (downloading images would also eat the provisioning time
 budget), so seed images are skipped.
 
+## Using the package (private distribution)
+The package is private and not on npm. A host installs it from this repository, pinned by tag:
+`"emdash-multisite": "github:theweekendprojects/emdash-multisite#v0.1.0"` (install verified: npm fetches the tag and
+the sources, which the host's Vite compiles). Releasing is `git tag vX.Y.Z && git push origin vX.Y.Z` after the CI is
+green and `package.json` carries the same version. In CI the host needs read access to this repo: a fine-grained token
+with read-only Contents access, wired in with a `git config url.<token>@github.com/.insteadOf` line.
+`examples/host-deploy.yml` is a ready-to-copy deploy workflow (install, build, `wrangler deploy`). During development
+the host can keep `"emdash-multisite": "file:../emdash-multisite"`.
+
 ## Backups and restore (per site)
 D1 Time Travel restores the whole database, so one damaged site needs its own copy. A backup is one JSON file in the
 media bucket at `_backups/<site>/<time>.json`: the site's `CREATE` statements plus its rows as multi-row `INSERT`s (values
