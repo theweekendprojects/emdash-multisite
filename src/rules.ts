@@ -232,3 +232,28 @@ export function switchSummary(themes: Themes, from: string, to: string): { adds:
 	const b = seedCollections(themes[to]?.seed);
 	return { adds: b.filter((c) => !a.includes(c)), hides: a.filter((c) => !b.includes(c)) };
 }
+
+// ---- post-login landing ----------------------------------------------------
+
+/** Where the control plane sends users after sign-in or sign-up when nothing else was asked. */
+export const DEFAULT_POST_LOGIN_PATH = "/sites";
+
+const AUTH_ENTRY = new Set(["/login", "/signup", "/auth/sign-in", "/auth/sign-up"]);
+
+/** A path-only redirect target: starts with one `/`, not `//` or `/\` (which browsers read as another host). */
+export const isLocalPath = (p: string): boolean => /^\/(?![/\\])/.test(p);
+
+/**
+ * The URL to redirect a sign-in / sign-up page request to, or null to serve it.
+ * A signed-in visitor goes straight to the landing page; an anonymous one gets
+ * the landing page added as `redirect` so Better Auth UI sends them there after
+ * authenticating. An explicit `redirect` is always respected.
+ */
+export function loginEntryRedirect(url: URL, signedIn: boolean, landing: string): string | null {
+	if (!AUTH_ENTRY.has(url.pathname)) return null;
+	if (signedIn) return landing;
+	if (url.searchParams.has("redirect")) return null;
+	const next = new URL(url);
+	next.searchParams.set("redirect", landing);
+	return next.pathname + next.search;
+}

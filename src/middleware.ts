@@ -16,7 +16,7 @@ import {
 	switchTheme,
 } from "./orgs.ts";
 import { isEmailVerified, readOrgs, readSiteTheme, warm } from "./registry.ts";
-import { DEFAULT_LIMITS, csrfOk, createProblem, needsReconcile, effectiveTheme, isThemeRouteRequest, isThemed, themeFromMetadata, themeProblem, themeRoute } from "./rules.ts";
+import { DEFAULT_LIMITS, DEFAULT_POST_LOGIN_PATH, csrfOk, loginEntryRedirect, createProblem, needsReconcile, effectiveTheme, isThemeRouteRequest, isThemed, themeFromMetadata, themeProblem, themeRoute } from "./rules.ts";
 import { isSiteId } from "./rewrite.ts";
 import { scopeState } from "./scope.ts";
 import { resolveSite, type SitesConfig } from "./sites.ts";
@@ -207,6 +207,16 @@ export async function onRequest(context: Ctx, next: Next): Promise<Response> {
 				after(async () => void (await runAsSite(site, () => reconcile(sites, slug))));
 			}
 			return status ? json(status, 200) : json({ code: "NOT_FOUND" }, 404);
+		}
+
+		// Sign-in / sign-up land on the console, not the marketing home.
+		if (method === "GET") {
+			const entry = loginEntryRedirect(
+				context.url,
+				(await sessionUserId(context)) !== null,
+				sites.postLoginPath ?? DEFAULT_POST_LOGIN_PATH,
+			);
+			if (entry) return Response.redirect(new URL(entry, context.url), 302);
 		}
 
 		// Customer console. Pages need a session (shell only, no data); the JSON

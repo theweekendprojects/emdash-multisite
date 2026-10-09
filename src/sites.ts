@@ -1,5 +1,5 @@
 import { isSiteId } from "./rewrite.ts";
-import { THEME_ID, type Limits, type Themes } from "./rules.ts";
+import { THEME_ID, isLocalPath, type Limits, type Themes } from "./rules.ts";
 
 /** Serializable (lives in the build-time database descriptor). */
 export interface SitesConfig {
@@ -19,12 +19,17 @@ export interface SitesConfig {
 	 * generated from a themes/ directory.
 	 */
 	themes?: Themes;
+	/** Where users land after signing in or up on the control plane. Defaults to `/sites`. */
+	postLoginPath?: string;
 	/** Theme preselected in the wizard and used when none is requested. Defaults to the first theme. */
 	defaultTheme?: string;
 }
 
 export function assertSitesConfig(c: SitesConfig): void {
 	if (!isSiteId(c.primary)) throw new Error(`[multisite] invalid primary site id: ${c.primary}`);
+	if (c.postLoginPath !== undefined && !isLocalPath(c.postLoginPath)) {
+		throw new Error(`[multisite] postLoginPath must be a path on this site: ${c.postLoginPath}`);
+	}
 	for (const id of Object.keys(c.themes ?? {})) {
 		if (!THEME_ID.test(id)) throw new Error(`[multisite] invalid theme id: ${id}`);
 	}

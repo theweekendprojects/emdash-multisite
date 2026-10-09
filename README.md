@@ -126,6 +126,7 @@ That's the whole integration: install + three wires. No plugin entry, no EmDash 
 | `primary` | `string` (required) | The site that keeps **unprefixed** tables. Use for the control plane / your existing single site. |
 | `wildcard` | `string` | Base domain. `acme.<wildcard>` → site `acme`. |
 | `hosts` | `Record<hostname, siteId>` | Exact hostname → site id, for custom domains and for hosts with no wildcard (e.g. `*.workers.dev`). |
+| `postLoginPath` | `string` | Where users land after signing in or up on the control plane. Default `/sites`. The middleware adds `?redirect=` to `/login`, `/signup`, `/auth/sign-in`, `/auth/sign-up` when none is given, and sends already-signed-in visitors of those pages there. No change to `emdash-better-auth` needed. |
 | `limits` | `{ sitesPerUser?, totalSites? }` | Caps on site creation. Default `{ sitesPerUser: 3 }`; pass `{}` for no caps. See [Creating sites](#creating-sites-limits-and-recovery). |
 
 | `themes` | `Record<id, { name, description?, seed? }>` | Themes a new site can pick. Each `seed` is an EmDash seed JSON applied when the site is created. Omit for a single theme (the host's bundled seed). |

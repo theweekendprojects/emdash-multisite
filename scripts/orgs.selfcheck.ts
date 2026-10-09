@@ -1,5 +1,5 @@
 /** Pure-logic checks for the org -> site hook: `node --no-warnings scripts/orgs.selfcheck.ts` */
-import { BUNDLED_THEME, DEFAULT_LIMITS, createProblem, csrfOk, seedCollections, switchSummary, effectiveTheme, needsReconcile, isThemeRouteRequest, isThemed, parseCreatedOrg, slugProblem, themeFromMetadata, themeProblem, themeRoute } from "../src/rules.ts";
+import { BUNDLED_THEME, DEFAULT_LIMITS, createProblem, csrfOk, isLocalPath, loginEntryRedirect, seedCollections, switchSummary, effectiveTheme, needsReconcile, isThemeRouteRequest, isThemed, parseCreatedOrg, slugProblem, themeFromMetadata, themeProblem, themeRoute } from "../src/rules.ts";
 import { isSiteId } from "../src/rewrite.ts";
 
 let failed = 0;
@@ -95,5 +95,15 @@ check("blog -> starter is lossless", switchSummary(tt, "blog", "starter"), { add
 check("blog -> portfolio adds projects, hides posts", switchSummary(tt, "blog", "portfolio"), { adds: ["projects"], hides: ["posts"] });
 check("marketing is additive with the others (own collection)", switchSummary(tt, "marketing", "blog"), { adds: ["posts", "pages"], hides: ["landing_pages"] });
 check("seedless theme adds and hides nothing", switchSummary(tt, "bare", "bare"), { adds: [], hides: [] });
+
+// ---- post-login landing ----
+const entry = (u: string, signedIn = false) => loginEntryRedirect(new URL(u, "https://app.example.com"), signedIn, "/sites");
+check("anonymous sign-in gets the landing as redirect", entry("/auth/sign-in"), "/auth/sign-in?redirect=%2Fsites");
+check("sign-up and aliases too", [entry("/auth/sign-up"), entry("/login"), entry("/signup")], ["/auth/sign-up?redirect=%2Fsites", "/login?redirect=%2Fsites", "/signup?redirect=%2Fsites"]);
+check("other query params are kept", entry("/auth/sign-in?foo=1"), "/auth/sign-in?foo=1&redirect=%2Fsites");
+check("explicit redirect is respected", entry("/login?redirect=%2Fadmin%2Ffleet"), null);
+check("signed-in visitor goes to the landing", [entry("/auth/sign-in", true), entry("/login?redirect=%2Fx", true)], ["/sites", "/sites"]);
+check("other pages untouched", [entry("/"), entry("/account"), entry("/auth/forgot-password"), entry("/sites")], [null, null, null, null]);
+check("local path check", [isLocalPath("/sites"), isLocalPath("//evil.com"), isLocalPath("/\\evil.com"), isLocalPath("https://evil.com"), isLocalPath("sites")], [true, false, false, false, false]);
 console.log(failed ? `\n${failed} FAILED` : "\nall passed");
 process.exit(failed ? 1 : 0);
