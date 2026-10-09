@@ -56,7 +56,15 @@ export interface Limits {
 	sitesPerUser?: number;
 	/** Sites on the whole platform (each site is ~90 D1 tables). */
 	totalSites?: number;
+	/** Media bytes one site may hold (sum of `media.size`). Checked before each upload. */
+	mediaBytesPerSite?: number;
 }
+
+/** Object key a site's media lives under in the shared bucket. */
+export const mediaKey = (site: string, key: string): string => `${site}/${key}`;
+/** Inverse of `mediaKey`; `null` when the key belongs to another site. */
+export const unmediaKey = (site: string, key: string): string | null =>
+	key.startsWith(`${site}/`) ? key.slice(site.length + 1) : null;
 
 /** A sane default so an unconfigured install is not an unlimited-site free-for-all. */
 export const DEFAULT_LIMITS: Limits = { sitesPerUser: 3 };

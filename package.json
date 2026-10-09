@@ -17,6 +17,7 @@
     "./bootstrap": "./src/bootstrap.ts",
     "./fleet": "./src/fleet.ts",
     "./scheduled": "./src/scheduled.ts",
+    "./storage": "./src/storage.ts",
     "./auth-ui": "./src/auth-ui.ts",
     "./plugin-entry": "./src/plugin-entry.ts",
     "./plugin": "./src/plugin.ts"

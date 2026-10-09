@@ -1,5 +1,5 @@
 /** Pure-logic checks for the org -> site hook: `node --no-warnings scripts/orgs.selfcheck.ts` */
-import { BUNDLED_THEME, DEFAULT_LIMITS, createProblem, csrfOk, isPurgeDue, isTableOfSite, parseSiteState, transition, isLocalPath, loginEntryRedirect, seedCollections, switchSummary, effectiveTheme, needsReconcile, isThemeRouteRequest, isThemed, parseCreatedOrg, slugProblem, themeFromMetadata, themeProblem, themeRoute } from "../src/rules.ts";
+import { BUNDLED_THEME, mediaKey, unmediaKey, DEFAULT_LIMITS, createProblem, csrfOk, isPurgeDue, isTableOfSite, parseSiteState, transition, isLocalPath, loginEntryRedirect, seedCollections, switchSummary, effectiveTheme, needsReconcile, isThemeRouteRequest, isThemed, parseCreatedOrg, slugProblem, themeFromMetadata, themeProblem, themeRoute } from "../src/rules.ts";
 import { isSiteId } from "../src/rewrite.ts";
 
 let failed = 0;
@@ -129,5 +129,7 @@ check("grace 0 purges at once", isPurgeDue({ state: "deleted", at: "2026-10-01T0
 check("tables of a site", ["ec_posts$acme", "users$acme", "_emdash_fts_posts$acme_data", "_emdash_fts_posts$acme_idx"].map((n) => isTableOfSite(n, "acme")), [true, true, true, true]);
 check("another site's tables are not claimed", ["ec_posts$acme-co", "users$acme2", "ec_posts$bacme", "users", "ec_posts", "_emdash_fts_posts$acme_other"].map((n) => isTableOfSite(n, "acme")), [false, false, false, false, false, false]);
 check("slug with hyphen", [isTableOfSite("ec_pages$bobs-blog", "bobs-blog"), isTableOfSite("ec_pages$bobs-blog", "blog")], [true, false]);
+check("media key prefix round trip", [mediaKey("acme", "a/b.png"), unmediaKey("acme", "acme/a/b.png")], ["acme/a/b.png", "a/b.png"]);
+check("another site's media key is not claimed", [unmediaKey("acme", "acme-co/a.png"), unmediaKey("acme", "other/acme/a.png")], [null, null]);
 console.log(failed ? `\n${failed} FAILED` : "\nall passed");
 process.exit(failed ? 1 : 0);

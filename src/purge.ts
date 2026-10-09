@@ -8,6 +8,7 @@ import { runAsSite } from "./dialect.ts";
 import { controlDb, forgetSiteState, readSiteState } from "./registry.ts";
 import { isTableOfSite, STATE_KEY_PREFIX } from "./rules.ts";
 import { scopeState } from "./scope.ts";
+import { purgeSiteMedia } from "./storage.ts";
 
 const quote = (name: string) => `"${name.replaceAll('"', '""')}"`;
 const ORG_COLLECTIONS = ["members", "invitations", "teams", "teamMembers", "organizationRoles"];
@@ -66,6 +67,8 @@ export async function purgeSite(slug: string): Promise<{ dropped: number; remain
 		}
 		if (todo.length) return { dropped, remaining: todo.length };
 
+		// Uploaded files (shared bucket, one key prefix per site).
+		await purgeSiteMedia(slug);
 		// Organization and its members/invitations/teams on the control plane.
 		const orgs = await sql<{ id: string; data: string }>`SELECT id, data FROM _plugin_storage WHERE collection = 'organizations'`.execute(db);
 		const org = orgs.rows.find((r) => {

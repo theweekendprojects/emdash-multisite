@@ -104,7 +104,7 @@ export default defineConfig({
         d1({ binding: "DB" }),
         { primary: "main", wildcard: "sites.example.com" },
       ),
-      storage: r2({ binding: "MEDIA" }),
+      storage: { ...r2({ binding: "MEDIA" }), entrypoint: "emdash-multisite/storage" }, // one bucket, key prefix per site
       middleware: { outer: "emdash-multisite/middleware" }, // wire 2: hostname -> site + org glue
       // ...authProviders / plugins (e.g. emdash-better-auth) ...
     }),
@@ -339,8 +339,16 @@ Themes should not share a collection slug with a different shape. The stock mark
 
 With no `themes` configured nothing is rewritten and the host's own pages serve every site.
 
-Seeds are applied with `skipMediaDownload`: object storage is shared across sites, so seed images
-are skipped rather than written to a bucket every site shares.
+Seeds are applied with `skipMediaDownload` (downloading images would also eat the provisioning time
+budget), so seed images are skipped.
+
+## Media (uploads)
+`emdash-multisite/storage` wraps the R2 storage: every key gets a `<site>/` prefix on write and read,
+and listings only return the active site's keys. Keys in a site's `media` table stay unprefixed. The
+wrapper reads the site on every call because core caches one storage instance per Worker. Purging a
+site deletes its prefix. `limits.mediaBytesPerSite` caps a site (sum of `media.size`, checked before
+each upload, so one file can overshoot). With a CDN `publicUrl` the URL carries the prefix.
+Check it live: `multisite-smoke/scripts/media-check.mjs`.
 
 ## Opening a tenant's admin (handoff)
 Cookies are per host, so a user signed in on the control plane is signed out on `acme.example.com`.
@@ -456,9 +464,9 @@ idempotent and resumes after a partial run. Not supported: renaming a site (the 
 
 ## Limits & gotchas
 
-- **Object cache and R2 are not per-site yet.** Do **not** enable the object cache (`objectCache:`)
-  on a multi-site deploy until the per-site key prefix is added, or cached content/media can cross
-  sites. Keep media isolation in mind.
+- **Object cache is not per-site.** Do **not** enable the object cache (`objectCache:`) on a
+  multi-site deploy, or cached content can cross sites. R2 media is per-site only through the
+  `emdash-multisite/storage` entrypoint; a plain `r2()` descriptor shares one namespace.
 - **Sandboxed plugins bypass the wrapper** (their bridge opens its own DB). Use **native** plugins
   only in a multi-site deploy.
 - **Cron / scheduled publishing runs for the `primary` site only** (a cron tick has no request, so
