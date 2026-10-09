@@ -217,6 +217,15 @@ runtime, every query) reads it from ALS/the request db. There is no per-call sit
 - **The theme lookup is on the public hot path.** It is one `options` read per site per minute
   per isolate (`readSiteTheme`). Do not add per-request queries to `themedNext`.
 
+- **FTS5 hidden column.** A full-text table has a hidden column named after the TABLE, used as
+  `WHERE "fts" MATCH ?`, `bm25("fts")`, `snippet("fts", ...)`. After the table is renamed these
+  names must follow it or search 500s on every non-primary site. `rewrite.ts` `isFtsColumn`
+  handles MATCH/bm25/snippet/highlight; extend it if core uses another FTS5 auxiliary function.
+  Found by a live `/search` on a themed blog site, not by the migration oracle.
+- **Preview aliases pin a version.** A `*-multisite-smoke` host served through a preview alias runs
+  the code of the version the alias was last uploaded with, not the deployed one. After a deploy,
+  re-upload each alias you are testing against.
+
 ## How to verify a change (always do this)
 
 Run with Node ≥ 22.18:

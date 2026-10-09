@@ -35,6 +35,12 @@ eq("string literal untouched", rewriteSql("SELECT 'FROM users' AS x FROM ec_post
 eq("create index renames index + table", rewriteSql('create unique index "idx_a" on "ec_posts" ("slug")', S), 'create unique index "idx_a$acme" on "ec_posts$acme" ("slug")');
 eq("trigger name", rewriteSql("CREATE TRIGGER IF NOT EXISTS t1 AFTER INSERT ON options BEGIN SELECT 1; END", S), 'CREATE TRIGGER IF NOT EXISTS "t1$acme" AFTER INSERT ON "options$acme" BEGIN SELECT 1; END');
 eq("rename-to target", rewriteSql('alter table "users_new" rename to "users"', S), 'alter table "users_new$acme" rename to "users$acme"');
+eq(
+	"fts5 hidden column, bm25 and snippet follow the table",
+	rewriteSql(`SELECT snippet("_emdash_fts_posts", 2, '<mark>', '</mark>', '...', 32) AS s, bm25("_emdash_fts_posts") AS score FROM "_emdash_fts_posts" f JOIN "ec_posts" c ON f.id = c.id WHERE "_emdash_fts_posts" MATCH ? ORDER BY score`, S),
+	`SELECT snippet("_emdash_fts_posts$acme", 2, '<mark>', '</mark>', '...', 32) AS s, bm25("_emdash_fts_posts$acme") AS score FROM "_emdash_fts_posts$acme" f JOIN "ec_posts$acme" c ON f.id = c.id WHERE "_emdash_fts_posts$acme" MATCH ? ORDER BY score`,
+);
+eq("a column that only looks like a table is left alone", rewriteSql("SELECT users FROM ec_posts WHERE x = 1", S), 'SELECT users FROM "ec_posts$acme" WHERE x = 1');
 eq("pragma table fn", rewriteSql("SELECT name FROM pragma_table_info('ec_posts')", S), `SELECT name FROM pragma_table_info('ec_posts$acme')`);
 eq("primary is identity", rewriteSql("SELECT * FROM ec_posts", ""), "SELECT * FROM ec_posts");
 eq("sqlite_ internals shared", isSiteTable("sqlite_sequence"), false);

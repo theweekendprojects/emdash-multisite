@@ -74,6 +74,21 @@ function rewritePragmas(sql: string, suffix: string): string {
 		);
 }
 
+/**
+ * FTS5 gives a virtual table a hidden column with the table's own name. It is
+ * what `WHERE "fts" MATCH ?` filters on and what `bm25("fts")`, `snippet("fts", ...)`
+ * and `highlight("fts", ...)` take, so it must follow the renamed table.
+ */
+function isFtsColumn(toks: string[], i: number, next: string | undefined): boolean {
+	if (next?.toUpperCase() === "MATCH") return true;
+	let j = i - 1;
+	while (j >= 0 && /^\s+$/.test(toks[j]!)) j--;
+	if (toks[j] !== "(") return false;
+	j--;
+	while (j >= 0 && /^\s+$/.test(toks[j]!)) j--;
+	return /^(?:bm25|snippet|highlight)$/i.test(toks[j] ?? "");
+}
+
 /** Rewrite every table/index/trigger identifier in `sql` for a non-primary site. */
 export function rewriteSql(sql: string, suffix: string): string {
 	if (!suffix) return sql;
@@ -115,7 +130,8 @@ export function rewriteSql(sql: string, suffix: string): string {
 		const inTableSlot =
 			(upPrev !== "" && TABLE_CONTEXT.has(upPrev)) ||
 			(upPrev === "ON" && (next === "(" || (isTrigger && next !== "."))) ||
-			(next === "." && prev !== ".");
+			(next === "." && prev !== ".") ||
+			isFtsColumn(toks, i, next);
 		if (inTableSlot) toks[i] = q(name + suffix);
 	}
 	return toks.join("");
