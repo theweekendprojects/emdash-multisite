@@ -244,6 +244,13 @@ runtime, every query) reads it from ALS/the request db. There is no per-call sit
 - **Theme switch = additive seed + option flip** (`switchTheme` in `orgs.ts`). `reconcile` reads
   the site's current theme option, not the org metadata, so a recovery never reverts a switch.
 
+- **Handoff links carry a credential in the URL.** Responses that contain them are `no-store` with
+  `Referrer-Policy: no-referrer`; keep it that way. The tenant route `/_multisite/handoff` is
+  handled before theme routing and is in `NOT_THEMED`. The secret lives in the control-plane
+  `options` table, not in env, so a Worker without secrets still works.
+- **`pnpm exec` in the host can start an install and time out.** Call `node_modules/.bin/wrangler`
+  directly. Run uploads detached and poll a marker file: asset upload alone can take over 100 s.
+
 ## How to verify a change (always do this)
 
 Run with Node ≥ 22.18:

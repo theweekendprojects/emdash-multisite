@@ -148,3 +148,58 @@ export async function readSiteTheme(site: string): Promise<string | null> {
 		return null;
 	}
 }
+
+// ---- control plane -> tenant handoff ---------------------------------------
+
+const SECRET_KEY = Symbol.for("emdash-multisite:handoff-secret");
+
+/**
+ * The key that signs handoff links. Generated once, stored on the control plane
+ * (the only place that can mint a link), and read by tenants from there, so no
+ * environment secret has to be shared between sites.
+ */
+export async function handoffSecret(): Promise<string> {
+	const g = globalThis as Record<symbol, string | undefined>;
+	if (g[SECRET_KEY]) return g[SECRET_KEY]!;
+	const db = controlDb();
+	const read = () =>
+		runAsSite(scopeState().primary, () =>
+			sql<{ value: string }>`SELECT value FROM options WHERE name = 'multisite:handoff-secret'`.execute(db),
+		);
+	let value = (await read()).rows[0]?.value;
+	if (!value) {
+		const fresh = JSON.stringify(btoa(String.fromCharCode(...crypto.getRandomValues(new Uint8Array(32)))));
+		await runAsSite(scopeState().primary, () =>
+			sql`INSERT INTO options (name, value) VALUES ('multisite:handoff-secret', ${fresh}) ON CONFLICT(name) DO NOTHING`.execute(db),
+		);
+		value = (await read()).rows[0]?.value;
+	}
+	const secret = JSON.parse(value ?? "null") as string | null;
+	if (!secret) throw new Error("[multisite] could not create the handoff secret");
+	g[SECRET_KEY] = secret;
+	return secret;
+}
+
+/**
+ * Accept a handoff nonce once, on the tenant. Returns false if it was used before.
+ * Expired nonces are swept in the same call so the table does not grow.
+ */
+export async function consumeHandoffNonce(site: string, nonce: string, exp: number): Promise<boolean> {
+	const db = controlDb();
+	return runAsSite(site, async () => {
+		await sql`DELETE FROM options WHERE name LIKE 'multisite:handoff:%' AND CAST(value AS INTEGER) < ${Date.now()}`.execute(db);
+		const r = await sql<{ name: string }>`
+			INSERT INTO options (name, value) VALUES (${`multisite:handoff:${nonce}`}, ${String(exp)})
+			ON CONFLICT(name) DO NOTHING RETURNING name`.execute(db);
+		return r.rows.length === 1;
+	});
+}
+
+/** Is `userId` an enabled user of `site`? */
+export async function siteHasUser(site: string, userId: string): Promise<boolean> {
+	const db = controlDb();
+	const r = await runAsSite(site, () =>
+		sql<{ id: string }>`SELECT id FROM users WHERE id = ${userId} AND disabled = 0`.execute(db),
+	);
+	return r.rows.length === 1;
+}

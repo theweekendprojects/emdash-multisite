@@ -60,7 +60,7 @@ export async function consoleState(userId: string, config: SitesConfig): Promise
 			status: st?.status ?? "unknown",
 			...(st?.status === "failed" ? { error: st.error } : {}),
 			url,
-			adminUrl: url ? `${url}/_emdash/admin` : null,
+			adminUrl: url ? `/sites/${org.slug}/open-admin` : null,
 			canRetry: (me.role === "owner" || staff) && needsReconcile(st ?? null, now),
 		});
 	}

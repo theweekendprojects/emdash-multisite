@@ -15,7 +15,9 @@ import {
 	slugProblem,
 	switchTheme,
 } from "./orgs.ts";
-import { isEmailVerified, readOrgs, readSiteTheme, warm } from "./registry.ts";
+import { consumeHandoffNonce, handoffSecret, isEmailVerified, readOrgs, readSiteTheme, siteHasUser, warm } from "./registry.ts";
+import { signHandoff, verifyHandoff } from "./handoff.ts";
+import { siteUrl } from "./sites.ts";
 import { DEFAULT_LIMITS, DEFAULT_POST_LOGIN_PATH, csrfOk, loginEntryRedirect, createProblem, needsReconcile, effectiveTheme, isThemeRouteRequest, isThemed, themeFromMetadata, themeProblem, themeRoute } from "./rules.ts";
 import { isSiteId } from "./rewrite.ts";
 import { scopeState } from "./scope.ts";
@@ -54,6 +56,7 @@ function sitesConfig(): SitesConfig | undefined {
 type Next = (rewrite?: string) => Promise<Response>;
 interface Session {
 	get(key: string): unknown | Promise<unknown>;
+	set(key: string, value: unknown): void;
 }
 interface Ctx {
 	url: URL;
@@ -137,6 +140,27 @@ async function themedNext(ctx: Ctx, sites: SitesConfig, site: string, next: Next
 	return next(themeRoute(theme, pathname) + ctx.url.search);
 }
 
+const HANDOFF_PATH = "/_multisite/handoff";
+const noStore = { "cache-control": "no-store", "referrer-policy": "no-referrer" };
+const redirectTo = (location: string) => new Response(null, { status: 302, headers: { location, ...noStore } });
+const handoffFailed = () =>
+	html("<!doctype html><meta charset=utf-8><title>Link expired</title><p>This sign-in link has expired or was already used. Go back and open the admin again.</p>", 403);
+
+/**
+ * Tenant side of "Open admin": check the signed link the control plane made,
+ * accept it once, start the user's session on this site and go to the admin.
+ */
+async function acceptHandoff(ctx: Ctx, site: string): Promise<Response> {
+	const token = ctx.url.searchParams.get("t") ?? "";
+	await warm();
+	const claims = await verifyHandoff(await handoffSecret(), token, site);
+	if (!claims) return handoffFailed();
+	if (!(await siteHasUser(site, claims.uid))) return handoffFailed();
+	if (!(await consumeHandoffNonce(site, claims.nonce, claims.exp))) return handoffFailed();
+	ctx.session?.set("user", { id: claims.uid });
+	return redirectTo("/_emdash/admin");
+}
+
 export async function onRequest(context: Ctx, next: Next): Promise<Response> {
 	const sites = sitesConfig();
 	if (!sites) return next();
@@ -145,10 +169,13 @@ export async function onRequest(context: Ctx, next: Next): Promise<Response> {
 	const site = resolveSite(context.url.hostname, sites);
 
 	return runAsSite(site, async () => {
-		if (site !== sites.primary) return themedNext(context, sites, site, next);
+		if (site !== sites.primary) {
+			if (context.request.method === "GET" && context.url.pathname === HANDOFF_PATH) return acceptHandoff(context, site);
+			return themedNext(context, sites, site, next);
+		}
 		const { pathname } = context.url;
 		const { method } = context.request;
-		if (pathname.startsWith("/api/multisite/") || pathname === FLEET_PAGE || pathname === ORG_CREATE_PATH) await warm();
+		if (pathname.startsWith("/api/multisite/") || pathname === FLEET_PAGE || pathname === ORG_CREATE_PATH || pathname.startsWith("/_multisite/") || /^\/sites\/[^/]+\/open-admin$/.test(pathname)) await warm();
 
 		// Appearance: the owner's theme picker for one site.
 		const appearancePage = /^\/sites\/([a-z0-9-]+)\/appearance$/.exec(pathname);
@@ -217,6 +244,18 @@ export async function onRequest(context: Ctx, next: Next): Promise<Response> {
 				sites.postLoginPath ?? DEFAULT_POST_LOGIN_PATH,
 			);
 			if (entry) return Response.redirect(new URL(entry, context.url), 302);
+		}
+
+		// "Open admin": sign a one-time link for the user and send them to the tenant.
+		const openAdmin = /^\/sites\/([a-z0-9-]+)\/open-admin$/.exec(pathname);
+		if (method === "GET" && openAdmin) {
+			const slug = openAdmin[1]!;
+			const userId = await sessionUserId(context);
+			if (!userId) return redirectTo(`/login?redirect=${encodeURIComponent(pathname)}`);
+			const base = siteUrl(slug, sites);
+			if (!base || !(await canManage(userId, slug, sites.primary)) || slug === sites.primary) return html("Not found", 404);
+			const token = await signHandoff(await handoffSecret(), { uid: userId, site: slug });
+			return redirectTo(`${base}${HANDOFF_PATH}?t=${encodeURIComponent(token)}`);
 		}
 
 		// Customer console. Pages need a session (shell only, no data); the JSON

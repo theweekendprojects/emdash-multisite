@@ -340,6 +340,17 @@ With no `themes` configured nothing is rewritten and the host's own pages serve 
 Seeds are applied with `skipMediaDownload`: object storage is shared across sites, so seed images
 are skipped rather than written to a bucket every site shares.
 
+## Opening a tenant's admin (handoff)
+Cookies are per host, so a user signed in on the control plane is signed out on `acme.example.com`.
+"Open admin" on `/sites` therefore goes to `/sites/<slug>/open-admin` on the control plane, which
+checks the user may manage the site, signs a link (HMAC-SHA256, 60 s, bound to user and site, one
+nonce) and redirects to `https://<site>/_multisite/handoff?t=...`. The tenant verifies the link,
+accepts its nonce once, checks the user exists on that site, starts the user's session there and
+redirects to `/_emdash/admin`. Replayed, tampered, expired or wrong-site links get `403`. The
+signing key is created on first use and stored on the control plane (`multisite:handoff-secret`),
+so no environment secret is shared. This signs the **owner** in; it does not sync passwords (a
+password changed on the control plane does not change the tenant's copy; backlog OP-05).
+
 ## Creating sites, limits and recovery
 Creating a site = creating a Better Auth organization (`POST /api/auth/organization/create`); the
 slug is the site address. The middleware checks the request **before** Better Auth sees it:
