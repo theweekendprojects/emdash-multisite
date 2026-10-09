@@ -351,6 +351,26 @@ signing key is created on first use and stored on the control plane (`multisite:
 so no environment secret is shared. This signs the **owner** in; it does not sync passwords (a
 password changed on the control plane does not change the tenant's copy; backlog OP-05).
 
+## Scheduled work (cron) for every site
+EmDash's scheduled handler publishes due scheduled content and runs plugin cron for the one ambient
+site, which in a cron trigger (no request, no hostname) is the primary. Wrap it so each ready site
+gets a turn:
+
+```ts
+// src/worker.ts
+import handler, { createScheduledHandler, PluginBridge } from "@emdash-cms/cloudflare/worker";
+import { perSiteScheduled } from "emdash-multisite/scheduled";
+export { PluginBridge };
+export default { ...handler, scheduled: perSiteScheduled(createScheduledHandler()) } satisfies ExportedHandler;
+```
+
+and add a trigger to `wrangler.jsonc` (`"triggers": { "crons": ["*/5 * * * *"] }`; apply with
+`wrangler triggers deploy`, since `versions deploy` does not change triggers). A tick sweeps the
+primary and then every site whose status is `ready`, one after another, and a failing site does not
+stop the rest. Verified live: scheduled posts on two tenant sites were published by one tick.
+Ceiling: a tick takes about (sites x per-site sweep); upgrade path is a Queue with one message per
+site, fed by the same loop.
+
 ## Creating sites, limits and recovery
 Creating a site = creating a Better Auth organization (`POST /api/auth/organization/create`); the
 slug is the site address. The middleware checks the request **before** Better Auth sees it:

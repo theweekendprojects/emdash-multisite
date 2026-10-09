@@ -251,6 +251,12 @@ runtime, every query) reads it from ALS/the request db. There is no per-call sit
 - **`pnpm exec` in the host can start an install and time out.** Call `node_modules/.bin/wrangler`
   directly. Run uploads detached and poll a marker file: asset upload alone can take over 100 s.
 
+- **`wrangler versions deploy` does not apply trigger changes.** After editing `triggers.crons`
+  run `wrangler triggers deploy`. The first tick after a trigger change can be skipped; check the
+  second one (a tail shows `"*/5 * * * *" ... - Ok` and `[scheduled] Published N item(s)`).
+- **The cron sweep depends on `readAllStatuses`:** a site with no `multisite:site:<slug>` row, or
+  not `ready`, is not swept. The primary always is.
+
 ## How to verify a change (always do this)
 
 Run with Node ≥ 22.18:

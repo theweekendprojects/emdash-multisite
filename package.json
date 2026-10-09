@@ -15,7 +15,8 @@
     "./vite": "./src/vite.ts",
     "./middleware": "./src/middleware.ts",
     "./bootstrap": "./src/bootstrap.ts",
-    "./fleet": "./src/fleet.ts"
+    "./fleet": "./src/fleet.ts",
+    "./scheduled": "./src/scheduled.ts"
   },
   "scripts": {
     "selfcheck": "node --no-warnings scripts/selfcheck.ts",
