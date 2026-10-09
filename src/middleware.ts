@@ -27,9 +27,11 @@ import {
 	warm,
 	writeSiteState,
 } from "./registry.ts";
+import { sitesConfig } from "./config.ts";
 import { signHandoff, verifyHandoff } from "./handoff.ts";
+import { purgeSite } from "./purge.ts";
 import { siteUrl } from "./sites.ts";
-import { DEFAULT_LIMITS, DEFAULT_POST_LOGIN_PATH, csrfOk, loginEntryRedirect, transition, type SiteState, type StateAction, createProblem, needsReconcile, effectiveTheme, isThemeRouteRequest, isThemed, themeFromMetadata, themeProblem, themeRoute } from "./rules.ts";
+import { DEFAULT_DELETE_GRACE_DAYS, DEFAULT_LIMITS, DEFAULT_POST_LOGIN_PATH, csrfOk, isPurgeDue, loginEntryRedirect, transition, type SiteState, type StateAction, createProblem, needsReconcile, effectiveTheme, isThemeRouteRequest, isThemed, themeFromMetadata, themeProblem, themeRoute } from "./rules.ts";
 import { isSiteId } from "./rewrite.ts";
 import { scopeState } from "./scope.ts";
 import { resolveSite, type SitesConfig } from "./sites.ts";
@@ -50,18 +52,6 @@ import { resolveSite, type SitesConfig } from "./sites.ts";
  * Wire it through EmDash's supported hook:
  *   emdash({ middleware: { outer: "emdash-multisite/middleware" } })
  */
-
-// Set at build time by withSites(), carried in the config baked into the Worker.
-// @ts-ignore - virtual module provided by EmDash's integration
-import emdashConfig from "virtual:emdash/config";
-
-interface WithSites {
-	database?: { config?: { sites?: SitesConfig } };
-}
-
-function sitesConfig(): SitesConfig | undefined {
-	return (emdashConfig as WithSites).database?.config?.sites;
-}
 
 /** Astro's `next`; a path argument rewrites the request. */
 type Next = (rewrite?: string) => Promise<Response>;
@@ -228,6 +218,29 @@ export async function onRequest(context: Ctx, next: Next): Promise<Response> {
 			if (!result.ok) return json({ code: result.code }, result.status);
 			await writeSiteState(slug, result.next ? { state: result.next, at: new Date().toISOString(), reason: `${action} by ${userId}` } : null);
 			return json({ state: result.next ?? "active" }, 200);
+		}
+
+		// Purge a deleted site for good (staff). Normally the cron does this after the grace period.
+		const purgeApi = /^\/api\/multisite\/sites\/([a-z0-9-]+)\/purge$/.exec(pathname);
+		if (method === "POST" && purgeApi) {
+			if (!csrfOk(context.request.headers, context.url.origin)) return forbidden();
+			const slug = purgeApi[1]!;
+			if (!(await isStaff(await sessionUserId(context)))) return json({ code: "FORBIDDEN" }, 403);
+			const current = await readSiteState(slug);
+			if (current?.state !== "deleted" || slug === sites.primary) return json({ code: "INVALID_STATE" }, 409);
+			const body = (await context.request.json().catch(() => null)) as { force?: unknown } | null;
+			const graceDays = sites.deleteGraceDays ?? DEFAULT_DELETE_GRACE_DAYS;
+			if (body?.force !== true && !isPurgeDue(current, graceDays, Date.now())) {
+				return json({ code: "NOT_DUE", message: `Deleted sites are kept ${graceDays} days.` }, 409);
+			}
+			after(async () => {
+				try {
+					await runAsSite(site, () => purgeSite(slug));
+				} catch (error) {
+					console.error(`[multisite] purging "${slug}" failed:`, error);
+				}
+			});
+			return json({ purging: true }, 202);
 		}
 
 		// Appearance: the owner's theme picker for one site.

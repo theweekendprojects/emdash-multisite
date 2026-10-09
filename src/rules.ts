@@ -311,3 +311,24 @@ export function transition(
 			return current?.state === "deleted" ? { ok: true, next: null } : conflict;
 	}
 }
+
+// ---- purge -----------------------------------------------------------------
+
+/** Days a deleted site is kept (restorable) before its data is destroyed. */
+export const DEFAULT_DELETE_GRACE_DAYS = 14;
+
+export function isPurgeDue(state: SiteState | undefined | null, graceDays: number, now: number): boolean {
+	return state?.state === "deleted" && now - Date.parse(state.at) >= graceDays * 86_400_000;
+}
+
+/**
+ * Does the physical table `name` belong to site `slug`? Tables are `<t>$<slug>`; a
+ * full-text table also owns shadow tables `<t>$<slug>_data|_idx|_content|_docsize|_config`.
+ * Matching is exact on the slug, so `$a` never claims `$ab`.
+ */
+export function isTableOfSite(name: string, slug: string): boolean {
+	const i = name.lastIndexOf(`$${slug}`);
+	if (i < 1) return false;
+	const rest = name.slice(i + 1 + slug.length);
+	return rest === "" || /^_(?:data|idx|content|docsize|config)$/.test(rest);
+}

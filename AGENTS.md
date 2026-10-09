@@ -264,6 +264,14 @@ runtime, every query) reads it from ALS/the request db. There is no per-call sit
 - **Zsh does not word-split unquoted variables.** `H='-H a -H b'; curl $H` sends nothing; in test
   scripts use explicit flags or a function.
 
+- **Never wake the runtime of a site that is being purged.** Initialising a site's EmDash runtime
+  runs its migrations, which re-creates the tables you just dropped. The cron sweep therefore skips
+  suspended/deleted sites, and any new background job that iterates sites must do the same (found
+  when a `*/5` tick resurrected a half-purged site).
+- **Purging drops ~100 tables and needs a stand-in for missing FK parents.** SQLite will not drop a
+  child table whose parent is already gone ("no such table: main.users$x"); `purge.ts` creates a
+  one-column stand-in, drops, and removes it. Re-running a purge is safe and resumes.
+
 ## How to verify a change (always do this)
 
 Run with Node ≥ 22.18:

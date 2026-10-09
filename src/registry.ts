@@ -234,6 +234,10 @@ export async function readSiteState(site: string): Promise<SiteState | null> {
 	}
 }
 
+export function forgetSiteState(site: string): void {
+	stateMemo().delete(site);
+}
+
 /** Every site that is not active, keyed by slug. */
 export async function readAllStates(): Promise<Map<string, SiteState>> {
 	const db = controlDb();

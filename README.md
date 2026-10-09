@@ -126,6 +126,7 @@ That's the whole integration: install + three wires. No plugin entry, no EmDash 
 | `primary` | `string` (required) | The site that keeps **unprefixed** tables. Use for the control plane / your existing single site. |
 | `wildcard` | `string` | Base domain. `acme.<wildcard>` → site `acme`. |
 | `hosts` | `Record<hostname, siteId>` | Exact hostname → site id, for custom domains and for hosts with no wildcard (e.g. `*.workers.dev`). |
+| `deleteGraceDays` | `number` | Days a deleted site stays restorable before it is purged. Default 14. |
 | `postLoginPath` | `string` | Where users land after signing in or up on the control plane. Default `/sites`. The middleware adds `?redirect=` to `/login`, `/signup`, `/auth/sign-in`, `/auth/sign-up` when none is given, and sends already-signed-in visitors of those pages there. No change to `emdash-better-auth` needed. |
 | `limits` | `{ sitesPerUser?, totalSites? }` | Caps on site creation. Default `{ sitesPerUser: 3 }`; pass `{}` for no caps. See [Creating sites](#creating-sites-limits-and-recovery). |
 
@@ -415,8 +416,13 @@ tenant cannot change it. `POST /api/multisite/sites/<slug>/state` with `{ "actio
 The fleet page has the matching buttons. Better Auth's `organization/delete` is refused on the
 control plane (`403 USE_DELETE_SITE`) because it would orphan the site's tables. The state is read on
 every tenant request and memoised 30 s per isolate (a change made in an isolate applies to it
-immediately). **Not done:** purging a deleted site's ~90 tables and its organization after a grace
-period (the data stays in D1), and renaming (the slug is the table suffix).
+immediately).
+
+**Purge.** A deleted site is kept for `deleteGraceDays` (default 14) and then destroyed for good: its
+tables are dropped, its organization and members are removed (which frees the slug) and its control-plane
+records are cleared. The cron fan-out purges at most one due site per tick; staff can purge earlier with
+`POST /api/multisite/sites/<slug>/purge` (`{ "force": true }` skips the grace period). Purging is
+idempotent and resumes after a partial run. Not supported: renaming a site (the slug is the table suffix).
 
 ## Operating a fleet
 

@@ -13,15 +13,24 @@
  * upgrade path is a Queue with one message per site, fed by this same loop.
  */
 import { runAsSite } from "./dialect.ts";
-import { readAllStatuses, warm } from "./registry.ts";
+import { sitesConfig } from "./config.ts";
+import { purgeSite } from "./purge.ts";
+import { readAllStates, readAllStatuses, warm } from "./registry.ts";
+import { DEFAULT_DELETE_GRACE_DAYS, isPurgeDue } from "./rules.ts";
 import { scopeState } from "./scope.ts";
 
 type Scheduled = (controller: unknown, env: unknown, ctx: { waitUntil(p: Promise<unknown>): void }) => unknown;
 
-/** Sites that should run: the primary, then every site whose provisioning finished. */
+/**
+ * Sites that should run: the primary, then every site whose provisioning finished
+ * and that is neither suspended nor deleted. Skipping the latter two matters: waking
+ * a site's runtime runs its migrations, which would re-create the tables of a site
+ * that is being purged.
+ */
 export async function sitesToSweep(): Promise<string[]> {
 	await warm();
-	const ready = [...(await readAllStatuses())].filter(([, s]) => s.status === "ready").map(([slug]) => slug);
+	const inactive = await readAllStates();
+	const ready = [...(await readAllStatuses())].filter(([slug, s]) => s.status === "ready" && !inactive.has(slug)).map(([slug]) => slug);
 	return [scopeState().primary, ...ready.sort()];
 }
 
@@ -29,6 +38,14 @@ export function perSiteScheduled<T extends Scheduled>(base: T): T {
 	const wrapped: Scheduled = (controller, env, ctx) => {
 		ctx.waitUntil(
 			(async () => {
+				// Destroy at most one site whose delete grace period is over (a purge is many DROPs).
+				try {
+					const grace = sitesConfig()?.deleteGraceDays ?? DEFAULT_DELETE_GRACE_DAYS;
+					const due = [...(await readAllStates())].find(([, st]) => isPurgeDue(st, grace, Date.now()));
+					if (due) await runAsSite(scopeState().primary, () => purgeSite(due[0]));
+				} catch (error) {
+					console.error("[multisite] purge failed:", error);
+				}
 				for (const site of await sitesToSweep()) {
 					// The base handler hands its work to ctx.waitUntil; collect it so each
 					// site finishes before the next starts, and one failing site does not

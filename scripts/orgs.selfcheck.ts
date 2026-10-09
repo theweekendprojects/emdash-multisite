@@ -1,5 +1,5 @@
 /** Pure-logic checks for the org -> site hook: `node --no-warnings scripts/orgs.selfcheck.ts` */
-import { BUNDLED_THEME, DEFAULT_LIMITS, createProblem, csrfOk, parseSiteState, transition, isLocalPath, loginEntryRedirect, seedCollections, switchSummary, effectiveTheme, needsReconcile, isThemeRouteRequest, isThemed, parseCreatedOrg, slugProblem, themeFromMetadata, themeProblem, themeRoute } from "../src/rules.ts";
+import { BUNDLED_THEME, DEFAULT_LIMITS, createProblem, csrfOk, isPurgeDue, isTableOfSite, parseSiteState, transition, isLocalPath, loginEntryRedirect, seedCollections, switchSummary, effectiveTheme, needsReconcile, isThemeRouteRequest, isThemed, parseCreatedOrg, slugProblem, themeFromMetadata, themeProblem, themeRoute } from "../src/rules.ts";
 import { isSiteId } from "../src/rewrite.ts";
 
 let failed = 0;
@@ -120,5 +120,14 @@ check("owner deletes own site, even suspended", [transition(null, "delete", owne
 check("stranger cannot delete", transition(null, "delete", nobody), { ok: false, status: 403, code: "FORBIDDEN" });
 check("cannot delete twice", transition(del, "delete", owner).ok, false);
 check("only staff restore, only deleted", [transition(del, "restore", owner).ok, transition(del, "restore", staff), transition(null, "restore", staff).ok], [false, { ok: true, next: null }, false]);
+
+// ---- purge ----
+const day = 86_400_000, t0 = Date.parse("2026-10-01T00:00:00Z");
+check("purge due after the grace period", [isPurgeDue({ state: "deleted", at: "2026-10-01T00:00:00Z" }, 14, t0 + 13 * day), isPurgeDue({ state: "deleted", at: "2026-10-01T00:00:00Z" }, 14, t0 + 14 * day)], [false, true]);
+check("only deleted sites are purgeable", [isPurgeDue({ state: "suspended", at: "2020-01-01T00:00:00Z" }, 0, t0), isPurgeDue(null, 0, t0)], [false, false]);
+check("grace 0 purges at once", isPurgeDue({ state: "deleted", at: "2026-10-01T00:00:00Z" }, 0, t0), true);
+check("tables of a site", ["ec_posts$acme", "users$acme", "_emdash_fts_posts$acme_data", "_emdash_fts_posts$acme_idx"].map((n) => isTableOfSite(n, "acme")), [true, true, true, true]);
+check("another site's tables are not claimed", ["ec_posts$acme-co", "users$acme2", "ec_posts$bacme", "users", "ec_posts", "_emdash_fts_posts$acme_other"].map((n) => isTableOfSite(n, "acme")), [false, false, false, false, false, false]);
+check("slug with hyphen", [isTableOfSite("ec_pages$bobs-blog", "bobs-blog"), isTableOfSite("ec_pages$bobs-blog", "blog")], [true, false]);
 console.log(failed ? `\n${failed} FAILED` : "\nall passed");
 process.exit(failed ? 1 : 0);
