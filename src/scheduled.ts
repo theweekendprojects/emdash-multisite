@@ -17,6 +17,7 @@ import { sitesConfig } from "./config.ts";
 import { reconcile } from "./orgs.ts";
 import { backupSite, readLastBackups } from "./backup.ts";
 import { mediaBucket } from "./media-bucket.ts";
+import { syncRecentPasswords } from "./passwords.ts";
 import { purgeSite } from "./purge.ts";
 import { readAllStates, readAllStatuses, warm } from "./registry.ts";
 import { DEFAULT_DELETE_GRACE_DAYS, backupDue, isPurgeDue } from "./rules.ts";
@@ -58,6 +59,12 @@ export function perSiteScheduled<T extends Scheduled>(base: T): T {
 					if (due && (await mediaBucket())) await runAsSite(scopeState().primary, () => backupSite(due[0]));
 				} catch (error) {
 					console.error("[multisite] backup failed:", error);
+				}
+				// Safety net for password changes whose immediate sync was cut off.
+				try {
+					await runAsSite(scopeState().primary, () => syncRecentPasswords(10 * 60_000));
+				} catch (error) {
+					console.error("[multisite] password sync failed:", error);
 				}
 				// Finish one site whose provisioning died and that nobody is watching.
 				try {

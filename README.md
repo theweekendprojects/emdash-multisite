@@ -399,7 +399,13 @@ signing key is created on first use and stored on the control plane (`multisite:
 so no environment secret is shared. Anyone who can read the database can read that key and sign in as any site's
 owner, so in production set a Worker secret instead: `wrangler secret put MULTISITE_SECRET` (32+ characters; it wins over
 the stored key). Set it before the first handoff or users with a link in flight get a "Link expired" page. This signs the **owner** in; it does not sync passwords (a
-password changed on the control plane does not change the tenant's copy; backlog OP-05).
+password changed on the control plane reaches the owner's sites, see "Passwords").
+
+## Passwords
+The owner's credential account is copied into each site at creation. A password change or reset on the control plane
+(`change-password`, `reset-password`, `set-password` returning 200) copies the changed account to every non-suspended site
+that user owns, right after the response; the cron repeats it for the last 10 minutes as a safety net. Editors who signed up
+on a site have their own account there and are not touched.
 
 ## Scheduled work (cron) for every site
 EmDash's scheduled handler publishes due scheduled content and runs plugin cron for the one ambient

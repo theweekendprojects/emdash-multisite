@@ -30,6 +30,7 @@ import {
 	writeSiteState,
 } from "./registry.ts";
 import { overLimit } from "./abuse.ts";
+import { PASSWORD_PATHS, syncRecentPasswords } from "./passwords.ts";
 import { backupSite, listBackups, restoreSite } from "./backup.ts";
 import { sitesConfig } from "./config.ts";
 import { signHandoff, verifyHandoff } from "./handoff.ts";
@@ -462,6 +463,12 @@ export async function onRequest(context: Ctx, next: Next): Promise<Response> {
 			return html(fleetPageHtml(), 200);
 		}
 
+		// A password change or reset on the control plane reaches the owner's sites too (see passwords.ts).
+		if (method === "POST" && PASSWORD_PATHS.has(pathname)) {
+			const response = await next();
+			if (response.status === 200) after(() => runAsSite(site, () => syncRecentPasswords(120_000)).then(() => undefined));
+			return response;
+		}
 		if (method === "POST" && pathname === SIGNUP_PATH) {
 			const rejected = await guardSignup(context, sites);
 			if (rejected) return rejected;
