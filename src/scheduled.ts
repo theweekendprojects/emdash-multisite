@@ -42,6 +42,13 @@ export function perSiteScheduled<T extends Scheduled>(base: T): T {
 	const wrapped: Scheduled = (controller, env, ctx) => {
 		ctx.waitUntil(
 			(async () => {
+				// A cron run can start in a fresh isolate that has served no request, so the database wrapper does not exist yet.
+				// Without this every task below failed with "database not initialised yet" (purge, backup, password sync, reconcile).
+				try {
+					await warm();
+				} catch (error) {
+					console.error("[multisite] could not open the database for the cron run:", error);
+				}
 				// Destroy at most one site whose delete grace period is over (a purge is many DROPs).
 				try {
 					const grace = sitesConfig()?.deleteGraceDays ?? DEFAULT_DELETE_GRACE_DAYS;
