@@ -110,6 +110,8 @@ export const unmediaKey = (site: string, key: string): string | null =>
 
 /** A sane default so an unconfigured install is not an unlimited-site free-for-all. */
 export const DEFAULT_LIMITS: Limits = { sitesPerUser: 3 };
+/** The configured limits on top of the defaults: setting one limit (say `mediaBytesPerSite`) must not silently drop the 3-site cap. */
+export const effectiveLimits = (configured: Limits | undefined): Limits => ({ ...DEFAULT_LIMITS, ...configured });
 
 export interface CreateContext {
 	/** Signed-in user, or null. */

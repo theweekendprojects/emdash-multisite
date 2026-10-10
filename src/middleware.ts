@@ -39,7 +39,7 @@ import { sitesConfig } from "./config.ts";
 import { signHandoff, verifyHandoff } from "./handoff.ts";
 import { purgeSite } from "./purge.ts";
 import { siteUrl } from "./sites.ts";
-import { TEMPLATE_PREFIX, demoBannerHtml, demoGuard, isTemplateId, lostLimitRace, SIGNUP_PATH, emailDomainBlocked, DEFAULT_DELETE_GRACE_DAYS, DEFAULT_LIMITS, DEFAULT_POST_LOGIN_PATH, csrfOk, isPurgeDue, loginEntryRedirect, transition, type SiteState, type StateAction, createProblem, needsReconcile, effectiveTheme, isThemeRouteRequest, isThemed, themeFromMetadata, themeProblem, themeRoute } from "./rules.ts";
+import { effectiveLimits, TEMPLATE_PREFIX, demoBannerHtml, demoGuard, isTemplateId, lostLimitRace, SIGNUP_PATH, emailDomainBlocked, DEFAULT_DELETE_GRACE_DAYS, DEFAULT_LIMITS, DEFAULT_POST_LOGIN_PATH, csrfOk, isPurgeDue, loginEntryRedirect, transition, type SiteState, type StateAction, createProblem, needsReconcile, effectiveTheme, isThemeRouteRequest, isThemed, themeFromMetadata, themeProblem, themeRoute } from "./rules.ts";
 import { isSiteId } from "./rewrite.ts";
 import { scopeState } from "./scope.ts";
 import { resolveSite, type SitesConfig } from "./sites.ts";
@@ -108,7 +108,7 @@ const json = (body: unknown, status: number) =>
 /** Provision a just-created site, unless it lost a creation race (see `lostLimitRace`): then it is deleted unprovisioned. */
 async function createOrRejectSite(sites: SitesConfig, org: NonNullable<ReturnType<typeof parseCreatedOrg>>): Promise<void> {
 	const states = await readAllStates();
-	if (lostLimitRace(org.slug, await readOrgs(), new Set([...states].filter(([, v]) => v.state === "deleted").map(([k]) => k)), sites.limits ?? DEFAULT_LIMITS)) {
+	if (lostLimitRace(org.slug, await readOrgs(), new Set([...states].filter(([, v]) => v.state === "deleted").map(([k]) => k)), effectiveLimits(sites.limits))) {
 		log("create.race_lost", { site: org.slug, user: org.ownerUserId });
 		await writeSiteState(org.slug, { state: "deleted", at: new Date().toISOString(), reason: "over the site limit (parallel requests)" });
 		return;
@@ -135,7 +135,7 @@ async function guardSignup(ctx: Ctx, sites: SitesConfig): Promise<Response | nul
 }
 async function guardOrgCreate(ctx: Ctx, sites: SitesConfig): Promise<Response | null> {
 	const { primary } = sites;
-	const limits = sites.limits ?? DEFAULT_LIMITS;
+	const limits = effectiveLimits(sites.limits);
 	let body: { slug?: unknown; metadata?: unknown } | null = null;
 	try {
 		body = (await ctx.request.clone().json()) as { slug?: unknown; metadata?: unknown };

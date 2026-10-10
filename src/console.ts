@@ -5,7 +5,7 @@
  */
 import { isStaff } from "./fleet.ts";
 import { isEmailVerified, readAllStates, readAllStatuses, readOrgs, readSiteTheme } from "./registry.ts";
-import { DEFAULT_LIMITS, effectiveTheme, needsReconcile, slugProblem, switchSummary, themeFromMetadata, type SiteStatus } from "./rules.ts";
+import { effectiveLimits, effectiveTheme, needsReconcile, slugProblem, switchSummary, themeFromMetadata, type SiteStatus } from "./rules.ts";
 import { siteUrl, type SitesConfig } from "./sites.ts";
 
 export interface MySite {
@@ -77,7 +77,7 @@ export async function consoleState(userId: string, config: SitesConfig): Promise
 		staff,
 		themed: Object.keys(config.themes ?? {}).length > 1,
 		owned: sites.filter((s) => s.role === "owner").length,
-		max: (config.limits ?? DEFAULT_LIMITS).sitesPerUser ?? null,
+		max: effectiveLimits(config.limits).sitesPerUser ?? null,
 	};
 }
 

@@ -1,5 +1,5 @@
 /** Pure-logic checks for the org -> site hook: `node --no-warnings scripts/orgs.selfcheck.ts` */
-import { mayStartAnother } from "../src/rules.ts";
+import { effectiveLimits, mayStartAnother } from "../src/rules.ts";
 import { authLinksFor } from "../src/auth-links.ts";
 import { demoBannerHtml, demoGuard, backupDue, backupKey, backupPrefix, lostLimitRace, emailDomainBlocked, BUNDLED_THEME, mediaKey, unmediaKey, DEFAULT_LIMITS, createProblem, csrfOk, isPurgeDue, isTableOfSite, parseSiteState, transition, isLocalPath, loginEntryRedirect, seedCollections, switchSummary, effectiveTheme, needsReconcile, isThemeRouteRequest, isThemed, parseCreatedOrg, slugProblem, themeFromMetadata, themeProblem, themeRoute } from "../src/rules.ts";
 import { isSiteId } from "../src/rewrite.ts";
@@ -161,5 +161,6 @@ check("cron reconcile loop: stops at 10 sites or 150 s, whichever first", [maySt
 	check("queued site is retried after 8 s, not before", [needsReconcile({ status: "provisioning", startedAt: at(5_000), step: "queued" }, now), needsReconcile({ status: "provisioning", startedAt: at(9_000), step: "queued" }, now)], [false, true]);
 	check("a running site is only restarted when stale (40 s)", [needsReconcile({ status: "provisioning", startedAt: at(20_000), step: "tables" }, now), needsReconcile({ status: "provisioning", startedAt: at(41_000), step: "tables" }, now)], [false, true]);
 }
+check("setting another limit keeps the default 3-site cap, and an explicit value wins", [effectiveLimits({ mediaBytesPerSite: 5 }).sitesPerUser, effectiveLimits(undefined).sitesPerUser, effectiveLimits({ sitesPerUser: 1 }).sitesPerUser], [3, 3, 1]);
 console.log(failed ? `\n${failed} FAILED` : "\nall passed");
 process.exit(failed ? 1 : 0);
