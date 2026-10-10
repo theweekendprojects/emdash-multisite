@@ -20,7 +20,7 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm }
       # emdash-multisite is private and pinned by tag in package.json:
-      #   "emdash-multisite": "github:theweekendprojects/emdash-multisite#v0.1.0"
+      #   "emdash-multisite": "github:theweekendprojects/emdash-multisite#v0.2.0"
       - run: git config --global url."https://x-access-token:${{ secrets.MULTISITE_READ_TOKEN }}@github.com/".insteadOf "https://github.com/"
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec astro build
