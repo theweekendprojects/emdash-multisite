@@ -349,6 +349,17 @@ ms, per-step timings), `site.failed`, `template.built`, `backup.saved`, `backup.
 Workers Logs with `"observability": { "enabled": true }` in `wrangler.jsonc` to search and count them in the dashboard
 (`wrangler tail` shows them live). No secrets, passwords or full email addresses are logged.
 
+## Sign in / Sign up bar
+`authBar: true` in the config adds a slim bar at the top of every public themed page: **Sign in** and **Sign up** for visitors,
+**My account** and **Admin** for people who are signed in (Admin only from the author role, 30, up). It is the same markup for
+everybody; the browser works out who is signed in (`/api/auth/get-session`, then `/_emdash/api/auth/me` for the role), so a
+cached page never shows one person's state to another. On the control plane it always offers Sign in and Sign up (anyone can
+register). On a customer site it shows Sign in and Sign up only while that site's public sign-up is on; with sign-up off it
+stays hidden for visitors and still appears for people who are signed in. Public theme demos never get it. Needs `HTMLRewriter`
+(Workers). The marketing theme has its own Admin link in its header; the two can both show for a signed-in author.
+ponytail: a utility bar, not part of each theme's navigation, so it works on every theme without patching them. Upgrade
+path: put the links in the theme headers through `import-themes.mjs`.
+
 ## Unknown sites
 Before a site's runtime starts, the middleware checks the site has tables (`siteExists`). A host for a site that was never
 created, or was purged, answers 404 and creates nothing. Without this, wildcard DNS would let a request for any subdomain

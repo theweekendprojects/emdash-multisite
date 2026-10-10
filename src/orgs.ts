@@ -55,6 +55,19 @@ export async function signUpOpen(slug: string): Promise<boolean> {
 	return r.rows[0]?.value !== "false";
 }
 
+const SIGNUP_MEMO = Symbol.for("emdash-multisite:signup-memo");
+/** `signUpOpen`, remembered for 30 s per isolate: it is asked for on every public page view. */
+export async function signUpOpenCached(slug: string): Promise<boolean> {
+	const g = globalThis as Record<symbol, Map<string, { v: boolean; t: number }> | undefined>;
+	const memo = (g[SIGNUP_MEMO] ??= new Map());
+	const hit = memo.get(slug);
+	if (hit && Date.now() - hit.t < 30_000) return hit.v;
+	const v = await signUpOpen(slug);
+	if (memo.size > 2000) memo.clear();
+	memo.set(slug, { v, t: Date.now() });
+	return v;
+}
+
 /** Free core's migration lock if it has been held longer than a provisioning run can last. */
 async function releaseStaleLock(db: ReturnType<typeof controlDb>, slug: string): Promise<void> {
 	const cutoff = Date.now() - STALE_PROVISIONING_MS;

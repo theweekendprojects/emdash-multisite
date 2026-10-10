@@ -11,6 +11,11 @@ export interface SitesConfig {
 	wildcard?: string;
 	/** Caps on site creation. Defaults to 3 sites per user, no platform cap. */
 	limits?: Limits;
+	/**
+	 * Show the Sign in / Sign up / My account / Admin bar on public pages (see `authBarHtml`). Needs `HTMLRewriter`
+	 * (Workers). Customer sites show it to visitors only while their public sign-up is on. Default off.
+	 */
+	authBar?: boolean;
 	/** Extra email domains refused at sign-up, on top of the built-in disposable-mail list. */
 	blockedEmailDomains?: string[];
 	/**

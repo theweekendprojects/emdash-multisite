@@ -12,6 +12,7 @@ import {
 	planFor,
 	readStatus,
 	reconcile,
+	signUpOpenCached,
 	slugProblem,
 	switchTheme,
 } from "./orgs.ts";
@@ -38,7 +39,7 @@ import { sitesConfig } from "./config.ts";
 import { signHandoff, verifyHandoff } from "./handoff.ts";
 import { purgeSite } from "./purge.ts";
 import { siteUrl } from "./sites.ts";
-import { TEMPLATE_PREFIX, demoBannerHtml, demoGuard, isTemplateId, lostLimitRace, SIGNUP_PATH, emailDomainBlocked, DEFAULT_DELETE_GRACE_DAYS, DEFAULT_LIMITS, DEFAULT_POST_LOGIN_PATH, csrfOk, isPurgeDue, loginEntryRedirect, transition, type SiteState, type StateAction, createProblem, needsReconcile, effectiveTheme, isThemeRouteRequest, isThemed, themeFromMetadata, themeProblem, themeRoute } from "./rules.ts";
+import { TEMPLATE_PREFIX, authBarHtml, demoBannerHtml, demoGuard, isTemplateId, lostLimitRace, SIGNUP_PATH, emailDomainBlocked, DEFAULT_DELETE_GRACE_DAYS, DEFAULT_LIMITS, DEFAULT_POST_LOGIN_PATH, csrfOk, isPurgeDue, loginEntryRedirect, transition, type SiteState, type StateAction, createProblem, needsReconcile, effectiveTheme, isThemeRouteRequest, isThemed, themeFromMetadata, themeProblem, themeRoute } from "./rules.ts";
 import { isSiteId } from "./rewrite.ts";
 import { scopeState } from "./scope.ts";
 import { resolveSite, type SitesConfig } from "./sites.ts";
@@ -173,14 +174,19 @@ async function guardOrgCreate(ctx: Ctx, sites: SitesConfig): Promise<Response | 
  * Direct requests to the subtree (`/theme-routes/...`) are refused: they would
  * skip site selection and show one theme's pages on another site's host.
  */
-async function themedNext(ctx: Ctx, sites: SitesConfig, site: string, next: Next): Promise<Response> {
+async function themedNext(ctx: Ctx, sites: SitesConfig, site: string, next: Next, opts: { authBar?: boolean } = {}): Promise<Response> {
 	if (!sites.themes) return next();
 	const { pathname } = ctx.url;
 	if (isThemeRouteRequest(pathname)) return new Response("Not found", { status: 404 });
 	if ((ctx.request.method !== "GET" && ctx.request.method !== "HEAD") || !isThemed(pathname)) return next();
 	await warm();
 	const theme = effectiveTheme(await readSiteTheme(site), sites.themes, sites.defaultTheme);
-	return next(themeRoute(theme, pathname) + ctx.url.search);
+	const response = await next(themeRoute(theme, pathname) + ctx.url.search);
+	if (!sites.authBar || opts.authBar === false || response.status !== 200 || !response.headers.get("content-type")?.includes("text/html") || typeof HTMLRewriter === "undefined") return response;
+	// The control plane is always open for sign-up; a customer site follows its own setting.
+	const primary = site === sites.primary;
+	const bar = authBarHtml({ signup: primary || (await signUpOpenCached(site)) ? "open" : "closed", account: primary ? "/account/sites" : "/account" });
+	return new HTMLRewriter().on("body", { element: (el: { prepend(c: string, o: { html: boolean }): void }) => el.prepend(bar, { html: true }) }).transform(response);
 }
 
 // Workers global; absent on Node, where the demo simply has no strip.
@@ -190,7 +196,7 @@ declare const HTMLRewriter: (new () => { on(sel: string, h: object): { transform
 async function serveDemo(ctx: Ctx, sites: SitesConfig, site: string, next: Next): Promise<Response> {
 	const refused = demoGuard(ctx.request.method, ctx.url.pathname);
 	if (refused) return new Response(refused === 405 ? "Method not allowed" : "Not found", { status: refused, headers: { allow: "GET, HEAD" } });
-	const response = await themedNext(ctx, sites, site, next);
+	const response = await themedNext(ctx, sites, site, next, { authBar: false });
 	const theme = site.slice(TEMPLATE_PREFIX.length);
 	if (!sites.appUrl || !response.headers.get("content-type")?.includes("text/html") || typeof HTMLRewriter === "undefined") return response;
 	const banner = demoBannerHtml(sites.themes?.[theme]?.name ?? theme, `${sites.appUrl}/account/sites?new=1&theme=${encodeURIComponent(theme)}`);
