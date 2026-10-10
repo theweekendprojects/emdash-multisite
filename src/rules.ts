@@ -170,6 +170,28 @@ export function lostLimitRace(
 	return limits.totalSites !== undefined && live.indexOf(me) >= limits.totalSites;
 }
 
+// ---- public theme demos ------------------------------------------------------
+
+/** Public paths a demo may serve besides its pages: search results and media files. */
+const DEMO_OPEN_API = ["/_emdash/api/search", "/_emdash/api/media/file/"];
+/**
+ * A template site doubles as a public, read-only demo of its theme. Returns the HTTP status to refuse a
+ * request with, or `null` to let it through: only GET/HEAD, and no admin, auth, plugin or write APIs.
+ */
+export function demoGuard(method: string, pathname: string): number | null {
+	if (method !== "GET" && method !== "HEAD") return 405;
+	if (pathname.startsWith("/api/") || pathname.startsWith("/_multisite/")) return 404;
+	if (pathname.startsWith("/_emdash") && !DEMO_OPEN_API.some((p) => (p.endsWith("/") ? pathname.startsWith(p) : pathname === p))) return 404;
+	return null;
+}
+const escapeHtml = (v: string) => v.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+/** The strip shown at the bottom of a demo page. `url` is where "Use this theme" goes. */
+export function demoBannerHtml(themeName: string, url: string): string {
+	return `<div role="region" aria-label="Theme demo" style="position:fixed;inset:auto 0 0 0;z-index:2147483647;display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap;padding:10px 16px;background:#111827;color:#fff;font:500 14px/1.4 system-ui,sans-serif">`
+		+ `<span>This is a demo of the ${escapeHtml(themeName)} theme.</span>`
+		+ `<a href="${escapeHtml(url)}" style="background:#fff;color:#111827;padding:6px 12px;border-radius:8px;text-decoration:none;font-weight:600">Use this theme</a></div>`;
+}
+
 // ---- backups ---------------------------------------------------------------
 
 /** Backups kept per site; older ones are deleted when a new one is saved. */

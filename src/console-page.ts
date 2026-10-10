@@ -109,7 +109,8 @@ const CLIENT_JS = String.raw`
     const picker = themes.length > 1
       ? '<fieldset class="themes"><legend>Theme</legend>' + themes.map((t) =>
           '<label class="theme"><input type="radio" name="theme" value="' + esc(t.id) + '"' + (t.id === tr.body.default ? " checked" : "") + '>' +
-          '<span><strong>' + esc(t.name) + '</strong><small>' + esc(t.description) + '</small></span></label>').join("") + '</fieldset>'
+          '<span><strong>' + esc(t.name) + '</strong><small>' + esc(t.description) + '</small>' +
+          (/^https:\/\//.test(t.demoUrl || "") ? '<small><a href="' + esc(t.demoUrl) + '" target="_blank" rel="noopener">Preview \u2197</a></small>' : '') + '</span></label>').join("") + '</fieldset>'
       : "";
     root.innerHTML =
       '<h1>Create a site</h1>' +

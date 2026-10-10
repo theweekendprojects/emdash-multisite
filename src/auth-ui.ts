@@ -47,6 +47,8 @@ interface Theme {
 	id: string;
 	name: string;
 	description: string;
+	/** Public demo of the theme, when one exists. */
+	demoUrl?: string;
 }
 
 const h = React.createElement;
@@ -115,7 +117,9 @@ function Wizard(props: { me: Me; onDone: () => void }) {
 		api("/api/multisite/themes").then((r) => {
 			if (!r.ok) return;
 			setThemes(r.body.themes ?? []);
-			setTheme(r.body.default ?? "");
+			// `?theme=` comes from the "Use this theme" strip on a demo.
+			const wanted = typeof location !== "undefined" ? new URLSearchParams(location.search).get("theme") : null;
+			setTheme((r.body.themes ?? []).some((t: Theme) => t.id === wanted) ? wanted : r.body.default ?? "");
 		});
 	}, []);
 
@@ -197,7 +201,8 @@ function Wizard(props: { me: Me; onDone: () => void }) {
 						h("label", { key: t.id, style: { display: "flex", gap: 10, alignItems: "flex-start", padding: "10px 12px", borderRadius: 10, cursor: "pointer",
 								border: theme === t.id ? "1px solid #2563eb" : border, boxShadow: theme === t.id ? "0 0 0 1px #2563eb" : "none" } },
 							h("input", { type: "radio", name: "theme", value: t.id, checked: theme === t.id, onChange: () => setTheme(t.id), style: { marginTop: 4 } }),
-							h("span", null, h("strong", null, t.name), h("small", { style: { display: "block", opacity: 0.65 } }, t.description)))))
+							h("span", null, h("strong", null, t.name), h("small", { style: { display: "block", opacity: 0.65 } }, t.description),
+								t.demoUrl ? h("a", { href: t.demoUrl, target: "_blank", rel: "noopener", style: { fontSize: 13 }, onClick: (e: any) => e.stopPropagation() }, "Preview \u2197") : null))))
 			: null,
 		error ? h("p", { role: "alert", style: errorText }, error) : null,
 		h("div", { style: { display: "flex", gap: 8 } },

@@ -96,6 +96,11 @@ export async function buildTemplate(sites: SitesConfig, theme: string, opts: { r
 	}
 	await buildSchemaAndSeed(controlDb(), slug, seed);
 	await runAsSite(slug, async () => {
+		// Without this flag EmDash's APIs answer NOT_CONFIGURED (the template doubles as a public demo, whose
+		// search needs them). Clones get it again from the identity step either way.
+		await sql`INSERT INTO options (name, value) VALUES ('emdash:setup_complete', 'true')
+			ON CONFLICT(name) DO UPDATE SET value = 'true'`.execute(controlDb());
+		// Written last: it marks the template complete.
 		await sql`INSERT INTO options (name, value) VALUES ('multisite:theme', ${JSON.stringify(theme)})
 			ON CONFLICT(name) DO UPDATE SET value = excluded.value`.execute(controlDb());
 	});

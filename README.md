@@ -349,6 +349,26 @@ ms, per-step timings), `site.failed`, `template.built`, `backup.saved`, `backup.
 Workers Logs with `"observability": { "enabled": true }` in `wrangler.jsonc` to search and count them in the dashboard
 (`wrangler tail` shows them live). No secrets, passwords or full email addresses are logged.
 
+## Fleet page (staff)
+On the control plane the plugin's **Site** page in the EmDash admin (`/_emdash/admin/plugins/multisite/site`, also reached
+from `/admin/fleet`) is the fleet: counts (sites, needing attention, suspended, deleted but not purged, users), and one row
+per site with its owner, setup status, state, users, age and an **Actions** menu: suspend, resume, delete, restore, retry
+setup, back up now. Purging a deleted site is a separate form that needs a confirmation toggle, because it cannot be
+undone. The same rules as the HTTP routes apply (`transition`, purge only for a deleted site); slow work (purge, retry)
+continues after the response. Only reachable with `plugins:manage`, which on the control plane means staff. The page is
+built by `fleet-blocks.ts` (pure, self-checked) and the actions run in `fleet-actions.ts`. JSON for scripts:
+`GET /api/multisite/fleet` (staff).
+
+## Public theme demos
+A template site (`tpl-<theme>`) is a seeded copy of its theme, so it doubles as a public demo with no extra content:
+give it an address like any site (a `hosts` entry, or `tpl-<theme>.<wildcard>` automatically) and visitors can browse it.
+Demos are read-only: only GET/HEAD, the admin, auth, plugin and write APIs answer 404/405 (`demoGuard`); pages, search and
+media files work. Each page gets a strip at the bottom, "This is a demo of the X theme. Use this theme", which opens the
+create-site wizard with the theme preselected (`/account/sites?new=1&theme=blog`). The theme pickers show a **Preview**
+link for every theme whose template is complete and has an address (`demoUrl` in `/api/multisite/themes`, memoised 60 s).
+The strip needs `HTMLRewriter` (Workers) and `appUrl`. A template needs `emdash:setup_complete` for its search API;
+`buildTemplate` sets it. Check: `multisite-smoke/scripts/demo-check.mjs`.
+
 ## Using the package (private distribution)
 The package is private and not on npm. A host installs it from this repository, pinned by tag:
 `"emdash-multisite": "github:theweekendprojects/emdash-multisite#v0.1.0"` (install verified: npm fetches the tag and
@@ -503,7 +523,7 @@ tenant cannot change it. `POST /api/multisite/sites/<slug>/state` with `{ "actio
 | `delete` | owner or staff | soft delete: the site answers `404` (as if it never existed) and disappears from the owner's list; frees one of the owner's site slots; the slug stays taken |
 | `restore` | staff | undo a delete |
 
-The fleet page has the matching buttons. Better Auth's `organization/delete` is refused on the
+The fleet page (below) has the matching actions. Better Auth's `organization/delete` is refused on the
 control plane (`403 USE_DELETE_SITE`) because it would orphan the site's tables. The state is read on
 every tenant request and memoised 30 s per isolate (a change made in an isolate applies to it
 immediately).

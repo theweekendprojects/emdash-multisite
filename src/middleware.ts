@@ -3,7 +3,6 @@ import { runAsSite } from "./dialect.ts";
 import { appearanceState, canManage, checkAddress, consoleState } from "./console.ts";
 import { consolePageHtml } from "./console-page.ts";
 import { isStaff, listSites } from "./fleet.ts";
-import { fleetPageHtml } from "./fleet-page.ts";
 import {
 	ORG_CREATE_PATH,
 	buildTemplate,
@@ -30,6 +29,7 @@ import {
 	writeSiteState,
 } from "./registry.ts";
 import { overLimit } from "./abuse.ts";
+import { demoUrls } from "./demo.ts";
 import { log } from "./log.ts";
 import { PASSWORD_PATHS, syncRecentPasswords } from "./passwords.ts";
 import { backupSite, listBackups, restoreSite } from "./backup.ts";
@@ -37,7 +37,7 @@ import { sitesConfig } from "./config.ts";
 import { signHandoff, verifyHandoff } from "./handoff.ts";
 import { purgeSite } from "./purge.ts";
 import { siteUrl } from "./sites.ts";
-import { lostLimitRace, SIGNUP_PATH, emailDomainBlocked, DEFAULT_DELETE_GRACE_DAYS, DEFAULT_LIMITS, DEFAULT_POST_LOGIN_PATH, csrfOk, isPurgeDue, loginEntryRedirect, transition, type SiteState, type StateAction, createProblem, needsReconcile, effectiveTheme, isThemeRouteRequest, isThemed, themeFromMetadata, themeProblem, themeRoute } from "./rules.ts";
+import { TEMPLATE_PREFIX, demoBannerHtml, demoGuard, isTemplateId, lostLimitRace, SIGNUP_PATH, emailDomainBlocked, DEFAULT_DELETE_GRACE_DAYS, DEFAULT_LIMITS, DEFAULT_POST_LOGIN_PATH, csrfOk, isPurgeDue, loginEntryRedirect, transition, type SiteState, type StateAction, createProblem, needsReconcile, effectiveTheme, isThemeRouteRequest, isThemed, themeFromMetadata, themeProblem, themeRoute } from "./rules.ts";
 import { isSiteId } from "./rewrite.ts";
 import { scopeState } from "./scope.ts";
 import { resolveSite, type SitesConfig } from "./sites.ts";
@@ -76,6 +76,7 @@ const RECONCILE_API = "/api/multisite/reconcile";
 const TEMPLATES_API = "/api/multisite/templates";
 const FLEET_API = "/api/multisite/fleet";
 const FLEET_PAGE = "/admin/fleet";
+const FLEET_NATIVE_PAGE = "/_emdash/admin/plugins/multisite/site";
 const forbidden = () => new Response(JSON.stringify({ code: "CSRF", message: "Missing or cross-site request." }), {
 	status: 403,
 	headers: { "content-type": "application/json", "cache-control": "no-store" },
@@ -181,6 +182,20 @@ async function themedNext(ctx: Ctx, sites: SitesConfig, site: string, next: Next
 	return next(themeRoute(theme, pathname) + ctx.url.search);
 }
 
+// Workers global; absent on Node, where the demo simply has no strip.
+declare const HTMLRewriter: (new () => { on(sel: string, h: object): { transform(r: Response): Response } }) | undefined;
+
+/** A template site as a public demo: read-only, with a strip offering to use the theme. */
+async function serveDemo(ctx: Ctx, sites: SitesConfig, site: string, next: Next): Promise<Response> {
+	const refused = demoGuard(ctx.request.method, ctx.url.pathname);
+	if (refused) return new Response(refused === 405 ? "Method not allowed" : "Not found", { status: refused, headers: { allow: "GET, HEAD" } });
+	const response = await themedNext(ctx, sites, site, next);
+	const theme = site.slice(TEMPLATE_PREFIX.length);
+	if (!sites.appUrl || !response.headers.get("content-type")?.includes("text/html") || typeof HTMLRewriter === "undefined") return response;
+	const banner = demoBannerHtml(sites.themes?.[theme]?.name ?? theme, `${sites.appUrl}/account/sites?new=1&theme=${encodeURIComponent(theme)}`);
+	return new HTMLRewriter().on("body", { element: (el: { append(c: string, o: { html: boolean }): void }) => el.append(banner, { html: true }) }).transform(response);
+}
+
 /** What visitors of a suspended or deleted site see. A deleted site is indistinguishable from one that never existed. */
 function unavailable(state: SiteState): Response {
 	return state.state === "deleted"
@@ -221,6 +236,7 @@ export async function onRequest(context: Ctx, next: Next): Promise<Response> {
 			await warm();
 			const blocked = await readSiteState(site);
 			if (blocked) return unavailable(blocked);
+			if (isTemplateId(site)) return serveDemo(context, sites, site, next);
 			if (context.request.method === "GET" && context.url.pathname === HANDOFF_PATH) return acceptHandoff(context, site);
 			return themedNext(context, sites, site, next);
 		}
@@ -390,8 +406,9 @@ export async function onRequest(context: Ctx, next: Next): Promise<Response> {
 			if (!(await sessionUserId(context))) return json({ code: "UNAUTHORIZED" }, 401);
 			const entries = Object.entries(sites.themes ?? {});
 			const fallback = effectiveTheme(null, sites.themes, sites.defaultTheme);
+			const demos = await demoUrls(sites);
 			return json(
-				{ default: fallback, themes: entries.map(([id, t]) => ({ id, name: t.name, description: t.description ?? "" })) },
+				{ default: fallback, themes: entries.map(([id, t]) => ({ id, name: t.name, description: t.description ?? "", ...(demos[id] ? { demoUrl: demos[id] } : {}) })) },
 				200,
 			);
 		}
@@ -462,14 +479,13 @@ export async function onRequest(context: Ctx, next: Next): Promise<Response> {
 			return json({ sites: await listSites() }, 200);
 		}
 
-		// The dashboard shell. The shell itself is harmless (no data), but gate it
-		// too so a stranger sees a sign-in prompt, not an admin-looking page. The
-		// data it fetches is separately gated above.
+		// The old fleet page is now the control plane's native admin page (plugin "Site"). Keep the
+		// address working: staff go there, everyone else signs in first.
 		if (method === "GET" && pathname === FLEET_PAGE) {
 			if (!(await isStaff(await sessionUserId(context)))) {
-				return Response.redirect(new URL("/login?redirect=/admin/fleet", context.url), 302);
+				return Response.redirect(new URL(`/login?redirect=${FLEET_PAGE}`, context.url), 302);
 			}
-			return html(fleetPageHtml(), 200);
+			return redirectTo(FLEET_NATIVE_PAGE);
 		}
 
 		// A password change or reset on the control plane reaches the owner's sites too (see passwords.ts).

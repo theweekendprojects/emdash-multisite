@@ -16,13 +16,18 @@ import { sitesConfig } from "./config.ts";
 import { PLUGIN_ID, PLUGIN_PAGE_PATH, PLUGIN_VERSION } from "./plugin.ts";
 import { switchTheme } from "./orgs.ts";
 import { themeProblem } from "./rules.ts";
-import { activeSite } from "./scope.ts";
+import { activeSite, scopeState } from "./scope.ts";
+import { listSites } from "./fleet.ts";
+import { runFleetAction } from "./fleet-actions.ts";
+import { PURGE_FORM_ACTION, fleetBlocks, parseFleetAction } from "./fleet-blocks.ts";
+import { isSiteId } from "./rewrite.ts";
 
 const SWITCH_ACTION = "switch_theme";
 
 interface Interaction {
 	type?: string;
 	action_id?: string;
+	value?: unknown;
 	values?: Record<string, unknown>;
 }
 interface Page {
@@ -30,9 +35,14 @@ interface Page {
 	toast?: { message: string; type: "info" | "success" | "error" };
 }
 
+/** The control plane's Site page is the fleet: every site, with staff actions. */
+async function fleetPage(toast?: Page["toast"]): Promise<Page> {
+	return { blocks: fleetBlocks(await listSites(), scopeState().primary), ...(toast ? { toast } : {}) };
+}
 async function buildPage(toast?: Page["toast"]): Promise<Page> {
 	const sites = sitesConfig();
 	const slug = activeSite();
+	if (slug === scopeState().primary) return fleetPage(toast);
 	const state = sites ? await appearanceState(slug, sites) : null;
 	const blocks: unknown[] = [{ type: "header", text: "Site" }];
 
@@ -111,6 +121,24 @@ export function createPlugin() {
 				permission: "plugins:manage",
 				handler: async (routeCtx: { input?: unknown }): Promise<Page> => {
 					const interaction = (routeCtx.input ?? { type: "page_load" }) as Interaction;
+					const sitesConfigured = sitesConfig();
+					if (sitesConfigured && activeSite() === scopeState().primary) {
+						// Control plane: row menu actions and the purge form. (Only reachable with `plugins:manage`, i.e. staff.)
+						const row = interaction.type === "block_action" ? parseFleetAction(interaction.action_id, interaction.value) : null;
+						if (row) {
+							const r = await runFleetAction(sitesConfigured, row.slug, row.action);
+							return fleetPage({ message: r.message, type: r.ok ? "success" : "error" });
+						}
+						if (interaction.type === "form_submit" && interaction.action_id === PURGE_FORM_ACTION) {
+							const slug = interaction.values?.slug;
+							if (typeof slug !== "string" || !isSiteId(slug) || interaction.values?.confirm !== true) {
+								return fleetPage({ message: "Pick a site and tick the box to purge.", type: "error" });
+							}
+							const r = await runFleetAction(sitesConfigured, slug, "purge");
+							return fleetPage({ message: r.message, type: r.ok ? "success" : "error" });
+						}
+						return fleetPage();
+					}
 					if (interaction.type === "form_submit" && interaction.action_id === SWITCH_ACTION) {
 						const sites = sitesConfig();
 						const theme = interaction.values?.theme;

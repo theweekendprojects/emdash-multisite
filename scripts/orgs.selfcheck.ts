@@ -1,5 +1,5 @@
 /** Pure-logic checks for the org -> site hook: `node --no-warnings scripts/orgs.selfcheck.ts` */
-import { backupDue, backupKey, backupPrefix, lostLimitRace, emailDomainBlocked, BUNDLED_THEME, mediaKey, unmediaKey, DEFAULT_LIMITS, createProblem, csrfOk, isPurgeDue, isTableOfSite, parseSiteState, transition, isLocalPath, loginEntryRedirect, seedCollections, switchSummary, effectiveTheme, needsReconcile, isThemeRouteRequest, isThemed, parseCreatedOrg, slugProblem, themeFromMetadata, themeProblem, themeRoute } from "../src/rules.ts";
+import { demoBannerHtml, demoGuard, backupDue, backupKey, backupPrefix, lostLimitRace, emailDomainBlocked, BUNDLED_THEME, mediaKey, unmediaKey, DEFAULT_LIMITS, createProblem, csrfOk, isPurgeDue, isTableOfSite, parseSiteState, transition, isLocalPath, loginEntryRedirect, seedCollections, switchSummary, effectiveTheme, needsReconcile, isThemeRouteRequest, isThemed, parseCreatedOrg, slugProblem, themeFromMetadata, themeProblem, themeRoute } from "../src/rules.ts";
 import { isSiteId } from "../src/rewrite.ts";
 
 let failed = 0;
@@ -143,5 +143,9 @@ check("race: deleted sites and other owners do not count", lostLimitRace("c", [m
 check("race: platform cap", [lostLimitRace("a", [mk("a", "u1", "1"), mk("b", "u2", "2")], new Set(), { totalSites: 1 }), lostLimitRace("b", [mk("a", "u1", "1"), mk("b", "u2", "2")], new Set(), { totalSites: 1 })], [false, true]);
 check("backup keys sort by time and stay inside the site's folder", [backupKey("acme", "2026-10-09T10:00:00.000Z"), backupKey("acme", "2026-10-09T10:00:00.000Z", "pre-restore"), backupPrefix("acme")], ["_backups/acme/2026-10-09T10:00:00.000Z.json", "_backups/acme/2026-10-09T10:00:00.000Z-pre-restore.json", "_backups/acme/"]);
 check("backup due: none yet, a day old, fresh", [backupDue(undefined, t0), backupDue("2026-09-30T00:00:00Z", t0), backupDue("2026-09-30T12:00:00Z", t0)], [true, true, false]);
+check("demo: pages, search and media files are public", ["/", "/posts/hello", "/rss.xml", "/_emdash/api/search", "/_emdash/api/media/file/a.png", "/_image"].map((p) => demoGuard("GET", p)), [null, null, null, null, null, null]);
+check("demo: writes are refused", [demoGuard("POST", "/"), demoGuard("DELETE", "/posts/x"), demoGuard("PUT", "/_emdash/api/search")], [405, 405, 405]);
+check("demo: admin, auth, plugin and write APIs are hidden", ["/_emdash/admin", "/_emdash/api/content/posts", "/_emdash/api/auth/me", "/api/auth/sign-in/email", "/api/multisite/me", "/_multisite/handoff", "/_emdash/api/searchx/../content"].map((p) => demoGuard("GET", p)), [404, 404, 404, 404, 404, 404, 404]);
+check("demo banner escapes the theme name and the link", demoBannerHtml("<b>x</b>", 'https://a/?x="1"').includes("&#60;b&#62;x&#60;/b&#62;") && !demoBannerHtml("x", 'https://a/?x="1"').includes('"1"'), true);
 console.log(failed ? `\n${failed} FAILED` : "\nall passed");
 process.exit(failed ? 1 : 0);
