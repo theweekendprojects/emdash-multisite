@@ -1,4 +1,5 @@
 /** Pure-logic checks for the org -> site hook: `node --no-warnings scripts/orgs.selfcheck.ts` */
+import { mayStartAnother } from "../src/rules.ts";
 import { authLinksFor } from "../src/auth-links.ts";
 import { demoBannerHtml, demoGuard, backupDue, backupKey, backupPrefix, lostLimitRace, emailDomainBlocked, BUNDLED_THEME, mediaKey, unmediaKey, DEFAULT_LIMITS, createProblem, csrfOk, isPurgeDue, isTableOfSite, parseSiteState, transition, isLocalPath, loginEntryRedirect, seedCollections, switchSummary, effectiveTheme, needsReconcile, isThemeRouteRequest, isThemed, parseCreatedOrg, slugProblem, themeFromMetadata, themeProblem, themeRoute } from "../src/rules.ts";
 import { isSiteId } from "../src/rewrite.ts";
@@ -154,5 +155,6 @@ check("links: visitor on a site with sign-up off gets nothing", authLinksFor({ s
 check("links: signed-in subscriber gets My account only, whatever the sign-up setting", [authLinksFor({ signup: false, account: "/account", user: { role: 10 } }), authLinksFor({ signup: true, account: "/account", user: { role: 10 } })], [[{ label: "My account", href: "/account" }], [{ label: "My account", href: "/account" }]]);
 check("links: Admin from role 30 up, not for 29", [authLinksFor({ signup: false, account: "/a", user: { role: 30 } }).map((l) => l.label), authLinksFor({ signup: false, account: "/a", user: { role: 29 } }).map((l) => l.label), authLinksFor({ signup: false, account: "/a", user: {} }).map((l) => l.label)], [["My account", "Admin"], ["My account"], ["My account"]]);
 check("links: a theme that draws its own Admin link opts out", authLinksFor({ signup: false, account: "/a", user: { role: 50 }, admin: false }).map((l) => l.label), ["My account"]);
+check("cron reconcile loop: stops at 10 sites or 150 s, whichever first", [mayStartAnother(0, 0), mayStartAnother(9, 1000), mayStartAnother(10, 1000), mayStartAnother(3, 149_999), mayStartAnother(3, 150_000)], [true, true, false, true, false]);
 console.log(failed ? `\n${failed} FAILED` : "\nall passed");
 process.exit(failed ? 1 : 0);

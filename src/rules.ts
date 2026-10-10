@@ -214,6 +214,15 @@ export const backupDue = (lastIso: string | undefined, now: number): boolean => 
  */
 export const STALE_PROVISIONING_MS = 40_000;
 
+/**
+ * The cron finishes stuck sites in a loop. A site made from a template takes a few seconds, one without takes up to ~90 s, and
+ * ticks are 5 minutes apart (two ticks must not both pick up the same half-finished site), so a tick starts another site only
+ * while fewer than 150 s have passed and at most 10 per tick.
+ */
+export const RECONCILE_MAX_PER_TICK = 10;
+export const RECONCILE_START_BUDGET_MS = 150_000;
+export const mayStartAnother = (done: number, elapsedMs: number): boolean => done < RECONCILE_MAX_PER_TICK && elapsedMs < RECONCILE_START_BUDGET_MS;
+
 /** Should provisioning run (again) for a site with this status? */
 export function needsReconcile(status: SiteStatus | null, now: number, staleMs = STALE_PROVISIONING_MS): boolean {
 	if (!status) return true;

@@ -20,7 +20,7 @@ import { mediaBucket } from "./media-bucket.ts";
 import { syncRecentPasswords } from "./passwords.ts";
 import { purgeSite } from "./purge.ts";
 import { readAllStates, readAllStatuses, warm } from "./registry.ts";
-import { DEFAULT_DELETE_GRACE_DAYS, backupDue, isPurgeDue } from "./rules.ts";
+import { DEFAULT_DELETE_GRACE_DAYS, backupDue, isPurgeDue, mayStartAnother } from "./rules.ts";
 import { scopeState } from "./scope.ts";
 
 type Scheduled = (controller: unknown, env: unknown, ctx: { waitUntil(p: Promise<unknown>): void }) => unknown;
@@ -69,7 +69,13 @@ export function perSiteScheduled<T extends Scheduled>(base: T): T {
 				// Finish one site whose provisioning died and that nobody is watching.
 				try {
 					const cfg = sitesConfig();
-					if (cfg) await runAsSite(scopeState().primary, () => reconcile(cfg));
+					if (cfg) {
+						// Several stuck sites per tick (template clones take seconds), not one: a bad deploy can strand dozens.
+						const t0 = Date.now();
+						for (let done = 0; mayStartAnother(done, Date.now() - t0); done++) {
+							if (!(await runAsSite(scopeState().primary, () => reconcile(cfg))).length) break;
+						}
+					}
 				} catch (error) {
 					console.error("[multisite] reconcile failed:", error);
 				}
