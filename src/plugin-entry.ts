@@ -14,7 +14,7 @@ import { definePlugin } from "emdash";
 import { appearanceState } from "./console.ts";
 import { sitesConfig } from "./config.ts";
 import { PLUGIN_ID, PLUGIN_PAGE_PATH, PLUGIN_VERSION } from "./plugin.ts";
-import { switchTheme } from "./orgs.ts";
+import { signUpOpen, switchTheme } from "./orgs.ts";
 import { themeProblem } from "./rules.ts";
 import { activeSite, scopeState } from "./scope.ts";
 import { listSites } from "./fleet.ts";
@@ -55,6 +55,10 @@ async function buildPage(toast?: Page["toast"]): Promise<Page> {
 	}
 
 	blocks.push({ type: "context", text: `${state.name} (${state.slug})` });
+	blocks.push({
+		type: "context",
+		text: `Public sign-up is ${(await signUpOpen(slug)) ? "ON: visitors can create an account" : "OFF: only people you add can sign in"}. Change it in Settings, Better Auth, "Allow new sign-ups".`,
+	});
 
 	if (state.themes.length > 1) {
 		blocks.push({ type: "divider" }, { type: "header", text: "Appearance" });

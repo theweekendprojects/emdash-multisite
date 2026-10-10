@@ -6,7 +6,7 @@
 import { sql } from "kysely";
 import { log } from "./log.ts";
 import { runAsSite } from "./dialect.ts";
-import { controlDb, forgetSiteState, readSiteState } from "./registry.ts";
+import { controlDb, forgetKnownSite, forgetSiteState, readSiteState } from "./registry.ts";
 import { isTableOfSite, STATE_KEY_PREFIX } from "./rules.ts";
 import { scopeState } from "./scope.ts";
 import { purgeSiteMedia } from "./media-bucket.ts";
@@ -98,6 +98,7 @@ export async function purgeSite(slug: string): Promise<{ dropped: number; remain
 		}
 		await sql`DELETE FROM options WHERE name IN (${`multisite:site:${slug}`}, ${STATE_KEY_PREFIX + slug})`.execute(db);
 		forgetSiteState(slug);
+		forgetKnownSite(slug);
 		log("site.purged", { site: slug, tables: dropped });
 		return { dropped, remaining: 0 };
 	});

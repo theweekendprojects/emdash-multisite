@@ -1,6 +1,6 @@
 {
   "name": "emdash-multisite",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "PRIVATE. Single-DB multi-site for EmDash: per-site table prefix applied inside the Kysely dialect. Not for publishing.",
   "license": "UNLICENSED",

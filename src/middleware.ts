@@ -23,6 +23,7 @@ import {
 	readOrgs,
 	readSiteState,
 	readSiteTheme,
+	siteExists,
 	siteHasTables,
 	siteHasUser,
 	warm,
@@ -234,6 +235,8 @@ export async function onRequest(context: Ctx, next: Next): Promise<Response> {
 	return runAsSite(site, async () => {
 		if (site !== sites.primary) {
 			await warm();
+			// Never start the runtime of a site that does not exist: it would create the site's tables.
+			if (!(await siteExists(site))) return html("<!doctype html><meta charset=utf-8><title>Not found</title><h1>Not found</h1>", 404);
 			const blocked = await readSiteState(site);
 			if (blocked) return unavailable(blocked);
 			if (isTemplateId(site)) return serveDemo(context, sites, site, next);

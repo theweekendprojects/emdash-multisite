@@ -106,6 +106,32 @@ export async function siteHasTables(slug: string): Promise<boolean> {
 	return Number(r.rows[0]?.n ?? 0) > 0;
 }
 
+const KNOWN = Symbol.for("emdash-multisite:known-sites");
+const KNOWN_TTL_MS = 15_000;
+const UNKNOWN_TTL_MS = 10_000;
+/**
+ * Does this site exist (have tables)? Asked on every tenant request, BEFORE the site's runtime starts:
+ * starting it runs EmDash's migrations, so with wildcard DNS a request for ANY subdomain would otherwise
+ * create ~90 tables for a site nobody made (and a purged site would come back to life). Memoised per
+ * isolate: a known site for 15 s (shorter than the 30 s state memo, so right after a purge a stale "exists" ends first), an unknown one for 10 s (so a flood of random names costs one read
+ * per name per 10 s, not one per request).
+ * ponytail: the memo holds at most 2000 names, then starts over. Upgrade path: a Cloudflare rate limit on unknown hosts.
+ */
+/** Forget what we know about a site (this isolate only), e.g. right after its purge. */
+export function forgetKnownSite(slug: string): void {
+	(globalThis as Record<symbol, Map<string, unknown> | undefined>)[KNOWN]?.delete(slug);
+}
+export async function siteExists(slug: string): Promise<boolean> {
+	const g = globalThis as Record<symbol, Map<string, { ok: boolean; expires: number }> | undefined>;
+	const memo = (g[KNOWN] ??= new Map());
+	const hit = memo.get(slug);
+	if (hit && hit.expires > Date.now()) return hit.ok;
+	const ok = await siteHasTables(slug);
+	if (memo.size > 2000) memo.clear();
+	memo.set(slug, { ok, expires: Date.now() + (ok ? KNOWN_TTL_MS : UNKNOWN_TTL_MS) });
+	return ok;
+}
+
 /** Provisioning status of every site, keyed by slug. */
 export async function readAllStatuses(): Promise<Map<string, SiteStatus>> {
 	const db = controlDb();

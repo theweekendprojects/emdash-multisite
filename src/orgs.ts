@@ -46,7 +46,14 @@ export async function writeStatus(slug: string, s: SiteStatus): Promise<void> {
 
 const BA_SETTINGS = "plugin:better-auth-settings:settings:";
 /** Settings not inherited by customer sites: they decide for themselves. */
-const NOT_INHERITED = new Set([`${BA_SETTINGS}orgEnabled`, `${BA_SETTINGS}teamsEnabled`]);
+const NOT_INHERITED = new Set([`${BA_SETTINGS}orgEnabled`, `${BA_SETTINGS}teamsEnabled`, `${BA_SETTINGS}signUpEnabled`]);
+
+/** Can visitors register on this site? Unset means open (Better Auth's default; sites made before the setting existed). */
+export async function signUpOpen(slug: string): Promise<boolean> {
+	const db = controlDb();
+	const r = await runAsSite(slug, () => sql<{ value: string }>`SELECT value FROM options WHERE name = ${`${BA_SETTINGS}signUpEnabled`}`.execute(db));
+	return r.rows[0]?.value !== "false";
+}
 
 /** Free core's migration lock if it has been held longer than a provisioning run can last. */
 async function releaseStaleLock(db: ReturnType<typeof controlDb>, slug: string): Promise<void> {
@@ -173,6 +180,11 @@ export async function createSiteForOrg(
 				await sql`INSERT INTO options (name, value) VALUES (${r.name}, ${r.value})
 					ON CONFLICT(name) DO NOTHING`.execute(db);
 			}
+			// A new customer site is closed to public registration; its owner turns it on in Settings
+			// ("Allow new sign-ups", emdash-better-auth 0.11) if they want subscribers. DO NOTHING so a
+			// retry of provisioning never undoes the owner's choice.
+			await sql`INSERT INTO options (name, value) VALUES (${`${BA_SETTINGS}signUpEnabled`}, 'false')
+				ON CONFLICT(name) DO NOTHING`.execute(db);
 			await sql`INSERT INTO options (name, value) VALUES ('multisite:theme', ${JSON.stringify(plan.theme)})
 				ON CONFLICT(name) DO UPDATE SET value = excluded.value`.execute(db);
 			await sql`INSERT INTO options (name, value) VALUES ('site:title', ${JSON.stringify(org.name)})

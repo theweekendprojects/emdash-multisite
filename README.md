@@ -349,6 +349,22 @@ ms, per-step timings), `site.failed`, `template.built`, `backup.saved`, `backup.
 Workers Logs with `"observability": { "enabled": true }` in `wrangler.jsonc` to search and count them in the dashboard
 (`wrangler tail` shows them live). No secrets, passwords or full email addresses are logged.
 
+## Unknown sites
+Before a site's runtime starts, the middleware checks the site has tables (`siteExists`). A host for a site that was never
+created, or was purged, answers 404 and creates nothing. Without this, wildcard DNS would let a request for any subdomain
+create ~90 tables. The answer is remembered per isolate (15 s for a known site, 10 s for an unknown one). Check:
+`multisite-smoke/scripts/unknown-site-check.mjs`.
+
+## Public sign-up per site
+Whether visitors can register is a setting of each site: "Allow new sign-ups" (`emdash-better-auth` 0.11.0, in the site's
+admin under Settings, Better Auth). A new customer site is created with it **off**: only people the owner adds can sign in,
+and any other attempt to create an account answers `403 SIGN_UP_DISABLED`. Owners who want subscribers turn it on. The
+control plane keeps it on (anyone can register and create a site). The setting is not inherited from the control plane, and
+a re-run of provisioning never changes it back. The Site page in each admin shows the current value. Sites created before
+the setting existed have none stored, which means open; close them with the runbook's backfill. The switch covers every
+way an account is created (email, social, magic link, one-time code), because it is a single user-creation hook.
+Check: `multisite-smoke/scripts/signup-switch-check.mjs`.
+
 ## Fleet page (staff)
 On the control plane the plugin's **Site** page in the EmDash admin (`/_emdash/admin/plugins/multisite/site`, also reached
 from `/admin/fleet`) is the fleet: counts (sites, needing attention, suspended, deleted but not purged, users), and one row
@@ -371,7 +387,7 @@ The strip needs `HTMLRewriter` (Workers) and `appUrl`. A template needs `emdash:
 
 ## Using the package (private distribution)
 The package is private and not on npm. A host installs it from this repository, pinned by tag:
-`"emdash-multisite": "github:theweekendprojects/emdash-multisite#v0.2.0"` (install verified: npm fetches the tag and
+`"emdash-multisite": "github:theweekendprojects/emdash-multisite#v0.2.1"` (install verified: npm fetches the tag and
 the sources, which the host's Vite compiles). Releasing is `git tag vX.Y.Z && git push origin vX.Y.Z` after the CI is
 green and `package.json` carries the same version. In CI the host needs read access to this repo: a fine-grained token
 with read-only Contents access, wired in with a `git config url.<token>@github.com/.insteadOf` line.
