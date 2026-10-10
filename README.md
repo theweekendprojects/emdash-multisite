@@ -410,7 +410,7 @@ The strip needs `HTMLRewriter` (Workers) and `appUrl`. A template needs `emdash:
 
 ## Using the package (private distribution)
 The package is private and not on npm. A host installs it from this repository, pinned by tag:
-`"emdash-multisite": "github:theweekendprojects/emdash-multisite#v0.2.1"` (install verified: npm fetches the tag and
+`"emdash-multisite": "github:theweekendprojects/emdash-multisite#v0.3.0"` (install verified: npm fetches the tag and
 the sources, which the host's Vite compiles). Releasing is `git tag vX.Y.Z && git push origin vX.Y.Z` after the CI is
 green and `package.json` carries the same version. In CI the host needs read access to this repo: a fine-grained token
 with read-only Contents access, wired in with a `git config url.<token>@github.com/.insteadOf` line.
