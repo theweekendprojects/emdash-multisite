@@ -361,16 +361,16 @@ The account page shows "N of M sites used". Needed alongside: a working email se
 nobody can create a site), the rate limit bindings, and Turnstile on sign-up (see Abuse controls). Paid plans raise these numbers
 per user (not built: plans, OP-11). Not built either: reclaiming idle free sites.
 
-## Sign in / Sign up bar
-`authBar: true` in the config adds a slim bar at the top of every public themed page: **Sign in** and **Sign up** for visitors,
-**My account** and **Admin** for people who are signed in (Admin only from the author role, 30, up). It is the same markup for
-everybody; the browser works out who is signed in (`/api/auth/get-session`, then `/_emdash/api/auth/me` for the role), so a
-cached page never shows one person's state to another. On the control plane it always offers Sign in and Sign up (anyone can
-register). On a customer site it shows Sign in and Sign up only while that site's public sign-up is on; with sign-up off it
-stays hidden for visitors and still appears for people who are signed in. Public theme demos never get it. Needs `HTMLRewriter`
-(Workers). The marketing theme has its own Admin link in its header; the two can both show for a signed-in author.
-ponytail: a utility bar, not part of each theme's navigation, so it works on every theme without patching them. Upgrade
-path: put the links in the theme headers through `import-themes.mjs`.
+## Sign in / Sign up links in the theme header
+`authLinks: true` sets `Astro.locals.multisite = { signup, account }` for themed pages. The host's `AuthLinks.astro` component
+(`multisite-smoke/src/multisite/`, patched into each theme's header by `import-themes.mjs`) prints plain links with the theme's
+own font and colour, decided by `authLinksFor`: a visitor sees **Sign in** and **Sign up** while the site's public sign-up is on
+(the control plane is always on), nothing while it is off; a signed-in person sees **My account** and, from the author role
+(30) up, **Admin** (themes that draw their own Admin link pass `admin={false}`). It is rendered on the server: **no script,
+no extra request, +0.2 KB of HTML** for a visitor. Pages differ only between "has a session" and "has none", which the
+themes already did for their Admin link. Public theme demos get none. Measured against no links and against an earlier
+script-driven bar in `emdash-plan/product/multisite-performance.md`. On a narrow screen the links wrap onto their own row
+in the header (+32 to +48 px); folding them into a theme's mobile menu is a later polish.
 
 ## Unknown sites
 Before a site's runtime starts, the middleware checks the site has tables (`siteExists`). A host for a site that was never
@@ -410,7 +410,7 @@ The strip needs `HTMLRewriter` (Workers) and `appUrl`. A template needs `emdash:
 
 ## Using the package (private distribution)
 The package is private and not on npm. A host installs it from this repository, pinned by tag:
-`"emdash-multisite": "github:theweekendprojects/emdash-multisite#v0.3.0"` (install verified: npm fetches the tag and
+`"emdash-multisite": "github:theweekendprojects/emdash-multisite#v0.4.0"` (install verified: npm fetches the tag and
 the sources, which the host's Vite compiles). Releasing is `git tag vX.Y.Z && git push origin vX.Y.Z` after the CI is
 green and `package.json` carries the same version. In CI the host needs read access to this repo: a fine-grained token
 with read-only Contents access, wired in with a `git config url.<token>@github.com/.insteadOf` line.

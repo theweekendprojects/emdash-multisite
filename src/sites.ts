@@ -12,10 +12,11 @@ export interface SitesConfig {
 	/** Caps on site creation. Defaults to 3 sites per user, no platform cap. */
 	limits?: Limits;
 	/**
-	 * Show the Sign in / Sign up / My account / Admin bar on public pages (see `authBarHtml`). Needs `HTMLRewriter`
-	 * (Workers). Customer sites show it to visitors only while their public sign-up is on. Default off.
+	 * Make the site's sign-up state available to themes as `Astro.locals.multisite` (`{ signup, account }`), for the
+	 * host's `AuthLinks` component that draws Sign in / Sign up / My account / Admin inside the theme header
+	 * (see `authLinksFor`). Customer sites offer Sign in / Sign up only while their public sign-up is on. Default off.
 	 */
-	authBar?: boolean;
+	authLinks?: boolean;
 	/** Extra email domains refused at sign-up, on top of the built-in disposable-mail list. */
 	blockedEmailDomains?: string[];
 	/**

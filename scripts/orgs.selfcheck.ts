@@ -1,5 +1,6 @@
 /** Pure-logic checks for the org -> site hook: `node --no-warnings scripts/orgs.selfcheck.ts` */
-import { authBarHtml, demoBannerHtml, demoGuard, backupDue, backupKey, backupPrefix, lostLimitRace, emailDomainBlocked, BUNDLED_THEME, mediaKey, unmediaKey, DEFAULT_LIMITS, createProblem, csrfOk, isPurgeDue, isTableOfSite, parseSiteState, transition, isLocalPath, loginEntryRedirect, seedCollections, switchSummary, effectiveTheme, needsReconcile, isThemeRouteRequest, isThemed, parseCreatedOrg, slugProblem, themeFromMetadata, themeProblem, themeRoute } from "../src/rules.ts";
+import { authLinksFor } from "../src/auth-links.ts";
+import { demoBannerHtml, demoGuard, backupDue, backupKey, backupPrefix, lostLimitRace, emailDomainBlocked, BUNDLED_THEME, mediaKey, unmediaKey, DEFAULT_LIMITS, createProblem, csrfOk, isPurgeDue, isTableOfSite, parseSiteState, transition, isLocalPath, loginEntryRedirect, seedCollections, switchSummary, effectiveTheme, needsReconcile, isThemeRouteRequest, isThemed, parseCreatedOrg, slugProblem, themeFromMetadata, themeProblem, themeRoute } from "../src/rules.ts";
 import { isSiteId } from "../src/rewrite.ts";
 
 let failed = 0;
@@ -147,14 +148,10 @@ check("demo: pages, search and media files are public", ["/", "/posts/hello", "/
 check("demo: writes are refused", [demoGuard("POST", "/"), demoGuard("DELETE", "/posts/x"), demoGuard("PUT", "/_emdash/api/search")], [405, 405, 405]);
 check("demo: admin, auth, plugin and write APIs are hidden", ["/_emdash/admin", "/_emdash/api/content/posts", "/_emdash/api/auth/me", "/api/auth/sign-in/email", "/api/multisite/me", "/_multisite/handoff", "/_emdash/api/searchx/../content"].map((p) => demoGuard("GET", p)), [404, 404, 404, 404, 404, 404, 404]);
 check("demo banner escapes the theme name and the link", demoBannerHtml("<b>x</b>", 'https://a/?x="1"').includes("&#60;b&#62;x&#60;/b&#62;") && !demoBannerHtml("x", 'https://a/?x="1"').includes('"1"'), true);
-{
-	const open = authBarHtml({ signup: "open", account: "/account" }), closed = authBarHtml({ signup: "closed", account: "/account" });
-	check("auth bar: open shows Sign in and Sign up, closed is hidden for visitors", open.includes('href="/login"') && open.includes('href="/signup"') && !open.includes(" hidden") && !closed.includes('href="/signup"') && closed.includes(" hidden>"), true);
-	check("auth bar: Admin only for role 30 and up, never in the markup itself", /\.role\|\|0\)>=30/.test(open) && !/>Admin</.test(open.split("<script>")[0]), true);
-	let parses = true;
-	try { new Function(open.match(/<script>([\s\S]*)<\/script>/)![1]); } catch { parses = false; }
-	check("auth bar: script parses", parses, true);
-	check("auth bar: account path is escaped", authBarHtml({ signup: "open", account: '"><x' }).includes('data-account="&#34;&#62;&#60;x"'), true);
-}
+check("links: visitor on a site with sign-up on gets Sign in and Sign up (Sign up is the call to action)", authLinksFor({ signup: true, account: "/account", user: null }), [{ label: "Sign in", href: "/login" }, { label: "Sign up", href: "/signup", cta: true }]);
+check("links: visitor on a site with sign-up off gets nothing", authLinksFor({ signup: false, account: "/account", user: null }), []);
+check("links: signed-in subscriber gets My account only, whatever the sign-up setting", [authLinksFor({ signup: false, account: "/account", user: { role: 10 } }), authLinksFor({ signup: true, account: "/account", user: { role: 10 } })], [[{ label: "My account", href: "/account" }], [{ label: "My account", href: "/account" }]]);
+check("links: Admin from role 30 up, not for 29", [authLinksFor({ signup: false, account: "/a", user: { role: 30 } }).map((l) => l.label), authLinksFor({ signup: false, account: "/a", user: { role: 29 } }).map((l) => l.label), authLinksFor({ signup: false, account: "/a", user: {} }).map((l) => l.label)], [["My account", "Admin"], ["My account"], ["My account"]]);
+check("links: a theme that draws its own Admin link opts out", authLinksFor({ signup: false, account: "/a", user: { role: 50 }, admin: false }).map((l) => l.label), ["My account"]);
 console.log(failed ? `\n${failed} FAILED` : "\nall passed");
 process.exit(failed ? 1 : 0);

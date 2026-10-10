@@ -192,30 +192,6 @@ export function demoBannerHtml(themeName: string, url: string): string {
 		+ `<a href="${escapeHtml(url)}" style="background:#fff;color:#111827;padding:6px 12px;border-radius:8px;text-decoration:none;font-weight:600">Use this theme</a></div>`;
 }
 
-// ---- sign in / sign up bar ----------------------------------------------------
-
-/**
- * A slim bar at the top of public pages: Sign in and Sign up for visitors, My account and Admin for people who are
- * signed in (Admin only from the author role, 30, up). It is the same markup for everyone and works out the signed-in
- * state in the browser (`/_emdash/api/auth/me`), so a cached page never shows one person's state to another.
- * Where public sign-up is off the bar stays hidden for visitors and still appears for signed-in people.
- * `signup` is decided on the server (the site's "Allow new sign-ups"); `account` is where My account goes.
- */
-export function authBarHtml(opts: { signup: "open" | "closed"; account: string }): string {
-	const open = opts.signup === "open";
-	const links = open ? '<a href="/login">Sign in</a><a href="/signup" class="ms-cta">Sign up</a>' : "";
-	return `<style>#ms-auth{display:flex;justify-content:flex-end;align-items:center;gap:8px;padding:6px 16px;background:rgba(127,127,127,.12);font:500 14px/1.4 system-ui,sans-serif}`
-		+ `#ms-auth[hidden]{display:none}#ms-auth a{color:inherit;text-decoration:none;padding:4px 12px;border-radius:8px}`
-		+ `#ms-auth a:hover{background:rgba(127,127,127,.2)}#ms-auth a:focus-visible{outline:2px solid currentColor;outline-offset:2px}`
-		+ `#ms-auth .ms-cta{border:1px solid currentColor;font-weight:600}</style>`
-		+ `<div id="ms-auth" role="navigation" aria-label="Account" data-account="${escapeHtml(opts.account)}"${open ? "" : " hidden"}>${links}</div>`
-		// get-session answers 200 with null for a visitor (no error in the console); only a signed-in person pays for the role lookup.
-		+ `<script>(function(){var e=document.getElementById("ms-auth");if(!e)return;`
-		+ `fetch("/api/auth/get-session",{credentials:"same-origin"}).then(function(r){return r.ok?r.json():null}).then(function(s){if(!s||!s.user)return;`
-		+ `return fetch("/_emdash/api/auth/me",{credentials:"same-origin"}).then(function(r){return r.ok?r.json():null}).then(function(j){var a=!!(j&&j.data&&(j.data.role||0)>=30);`
-		+ `e.innerHTML='<a href="'+e.dataset.account+'">My account</a>'+(a?'<a href="/_emdash/admin">Admin</a>':"");e.hidden=false})}).catch(function(){})})()</script>`;
-}
-
 // ---- backups ---------------------------------------------------------------
 
 /** Backups kept per site; older ones are deleted when a new one is saved. */
