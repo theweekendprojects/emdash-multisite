@@ -388,6 +388,22 @@ the setting existed have none stored, which means open; close them with the runb
 way an account is created (email, social, magic link, one-time code), because it is a single user-creation hook.
 Check: `multisite-smoke/scripts/signup-switch-check.mjs`.
 
+## Provisioning slots (bursts of new sites)
+One D1 database does one write at a time, and a site clone writes ~370 objects, so many sites created at once slowed every other
+site (12 at once: page reads p95 0.6 s to 3.2 s, max 6 s). `limits.concurrentProvisions` (default **1**) caps how many sites are
+provisioned at the same time across the whole platform. A slot is a control-plane row taken with one atomic statement and freed
+after the run or when it expires (150 s) if the holder died. A site that cannot get a slot within 6 s shows "Waiting for a free
+slot" and is retried every 8 s by the wizard poll (or by the cron). Measured with `scripts/load-check.mjs`, 12 sites at once:
+
+| Cap | Reads during the burst (p95 / max) | Last site ready |
+|---|---|---|
+| none | 3.2 s / 6.0 s | 18 s |
+| 3 | 3.1 s / 4.0 s | 27 s |
+| **1** | **1.2 s / 1.9 s** (as quiet) | 42 s |
+
+Raise it only after measuring. A `limits` object you write is merged over the defaults (`effectiveLimits`), so setting
+`concurrentProvisions` or `mediaBytesPerSite` alone no longer drops the 3-site-per-user cap.
+
 ## Fleet page (staff)
 On the control plane the plugin's **Site** page in the EmDash admin (`/_emdash/admin/plugins/multisite/site`, also reached
 from `/admin/fleet`) is the fleet: counts (sites, needing attention, suspended, deleted but not purged, users), and one row
@@ -417,7 +433,7 @@ The strip is fixed to the bottom and the page gets bottom padding so it never co
 
 ## Using the package (private distribution)
 The package is private and not on npm. A host installs it from this repository, pinned by tag:
-`"emdash-multisite": "github:theweekendprojects/emdash-multisite#v0.4.0"` (install verified: npm fetches the tag and
+`"emdash-multisite": "github:theweekendprojects/emdash-multisite#v0.5.0"` (install verified: npm fetches the tag and
 the sources, which the host's Vite compiles). Releasing is `git tag vX.Y.Z && git push origin vX.Y.Z` after the CI is
 green and `package.json` carries the same version. In CI the host needs read access to this repo: a fine-grained token
 with read-only Contents access, wired in with a `git config url.<token>@github.com/.insteadOf` line.

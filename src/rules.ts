@@ -98,7 +98,7 @@ export interface Limits {
 	totalSites?: number;
 	/** Media bytes one site may hold (sum of `media.size`). Checked before each upload. */
 	mediaBytesPerSite?: number;
-	/** Sites provisioned at the same time, platform-wide (default 3). The rest wait their turn. */
+	/** Sites provisioned at the same time, platform-wide (default 1: measured, see OP-43). The rest wait their turn. */
 	concurrentProvisions?: number;
 }
 
@@ -228,7 +228,7 @@ export const RECONCILE_START_BUDGET_MS = 150_000;
 export const mayStartAnother = (done: number, elapsedMs: number): boolean => done < RECONCILE_MAX_PER_TICK && elapsedMs < RECONCILE_START_BUDGET_MS;
 
 /** Provisioning slots (see slots.ts): the default cap, how long a slot lives if its holder dies, how long one attempt waits, and how soon a queued site is retried. */
-export const DEFAULT_CONCURRENT_PROVISIONS = 3;
+export const DEFAULT_CONCURRENT_PROVISIONS = 1;
 export const SLOT_PREFIX = "multisite:slot:";
 export const SLOT_TTL_MS = 150_000;
 export const SLOT_WAIT_MS = 6_000;
