@@ -349,6 +349,18 @@ ms, per-step timings), `site.failed`, `template.built`, `backup.saved`, `backup.
 Workers Logs with `"observability": { "enabled": true }` in `wrangler.jsonc` to search and count them in the dashboard
 (`wrangler tail` shows them live). No secrets, passwords or full email addresses are logged.
 
+## Free tier (recommended settings)
+Anyone can register on the control plane and create a site; the limits decide what free means. For one free site per person:
+```ts
+withSites(d1({ binding: "DB" }), {
+  primary: "main", wildcard: "example.com", appUrl: "https://app.example.com", authBar: true,
+  limits: { sitesPerUser: 1, totalSites: 5000, mediaBytesPerSite: 200 * 1024 * 1024 },
+})
+```
+The account page shows "N of M sites used". Needed alongside: a working email sender with `requireEmailVerification` on (otherwise
+nobody can create a site), the rate limit bindings, and Turnstile on sign-up (see Abuse controls). Paid plans raise these numbers
+per user (not built: plans, OP-11). Not built either: reclaiming idle free sites.
+
 ## Sign in / Sign up bar
 `authBar: true` in the config adds a slim bar at the top of every public themed page: **Sign in** and **Sign up** for visitors,
 **My account** and **Admin** for people who are signed in (Admin only from the author role, 30, up). It is the same markup for
