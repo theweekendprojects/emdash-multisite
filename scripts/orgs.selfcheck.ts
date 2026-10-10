@@ -156,5 +156,10 @@ check("links: signed-in subscriber gets My account only, whatever the sign-up se
 check("links: Admin from role 30 up, not for 29", [authLinksFor({ signup: false, account: "/a", user: { role: 30 } }).map((l) => l.label), authLinksFor({ signup: false, account: "/a", user: { role: 29 } }).map((l) => l.label), authLinksFor({ signup: false, account: "/a", user: {} }).map((l) => l.label)], [["My account", "Admin"], ["My account"], ["My account"]]);
 check("links: a theme that draws its own Admin link opts out", authLinksFor({ signup: false, account: "/a", user: { role: 50 }, admin: false }).map((l) => l.label), ["My account"]);
 check("cron reconcile loop: stops at 10 sites or 150 s, whichever first", [mayStartAnother(0, 0), mayStartAnother(9, 1000), mayStartAnother(10, 1000), mayStartAnother(3, 149_999), mayStartAnother(3, 150_000)], [true, true, false, true, false]);
+{
+	const now = Date.parse("2026-10-10T12:00:00Z"), at = (ms: number) => new Date(now - ms).toISOString();
+	check("queued site is retried after 8 s, not before", [needsReconcile({ status: "provisioning", startedAt: at(5_000), step: "queued" }, now), needsReconcile({ status: "provisioning", startedAt: at(9_000), step: "queued" }, now)], [false, true]);
+	check("a running site is only restarted when stale (40 s)", [needsReconcile({ status: "provisioning", startedAt: at(20_000), step: "tables" }, now), needsReconcile({ status: "provisioning", startedAt: at(41_000), step: "tables" }, now)], [false, true]);
+}
 console.log(failed ? `\n${failed} FAILED` : "\nall passed");
 process.exit(failed ? 1 : 0);

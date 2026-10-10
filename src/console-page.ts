@@ -186,7 +186,7 @@ const CLIENT_JS = String.raw`
           '<p><a class="btn primary" href="/sites">Go to my sites to retry</a></p>';
         return;
       }
-      const labels = { tables: "Creating your site\u2026", content: "Adding starter content\u2026", identity: "Setting up your account\u2026" };
+      const labels = { queued: "Waiting for a free slot\u2026", tables: "Creating your site\u2026", content: "Adding starter content\u2026", identity: "Setting up your account\u2026" };
       if (st === "provisioning" && r.body.step && labels[r.body.step]) ps.textContent = labels[r.body.step];
       if (tries > 90) { ps.textContent = "Still working. You can leave this page and check My sites."; return; }
       setTimeout(tick, 2500);

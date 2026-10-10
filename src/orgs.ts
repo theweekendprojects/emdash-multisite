@@ -14,13 +14,15 @@ import { applySeed } from "emdash";
 import { userSeed } from "virtual:emdash/seed";
 import { runAsSite } from "./dialect.ts";
 import { isSiteId } from "./rewrite.ts";
-import { BUNDLED_THEME, STALE_PROVISIONING_MS, templateId, effectiveTheme, needsReconcile, themeFromMetadata, type ProvisionStep, type SiteStatus } from "./rules.ts";
+import { BUNDLED_THEME, DEFAULT_CONCURRENT_PROVISIONS, SLOT_WAIT_MS, STALE_PROVISIONING_MS, templateId, effectiveTheme, needsReconcile, themeFromMetadata, type ProvisionStep, type SiteStatus } from "./rules.ts";
 import type { SitesConfig } from "./sites.ts";
 import { controlDb, forgetSiteTheme, readAllStates, readOrgs, readSiteTheme, siteHasTables } from "./registry.ts";
 import { scopeState } from "./scope.ts";
 import { provisionWith } from "./provision.ts";
 import { log } from "./log.ts";
 import { cloneTemplate, hasTemplate } from "./clone-run.ts";
+import { sitesConfig } from "./config.ts";
+import { acquireSlot, releaseSlot } from "./slots.ts";
 import { dropSiteTables } from "./purge.ts";
 
 export { ORG_CREATE_PATH, RESERVED_SITE_IDS, parseCreatedOrg, slugProblem, type SiteStatus } from "./rules.ts";
@@ -139,6 +141,13 @@ export async function createSiteForOrg(
 	const st = scopeState();
 	const startedAt = new Date().toISOString();
 	await writeStatus(org.slug, { status: "provisioning", startedAt, step: "tables" });
+	// Wait for one of the platform's provisioning slots; if none frees up soon, say "queued" and let the next poll or cron retry.
+	const max = sitesConfig()?.limits?.concurrentProvisions ?? DEFAULT_CONCURRENT_PROVISIONS;
+	if (!(await acquireSlot(org.slug, max, SLOT_WAIT_MS))) {
+		await writeStatus(org.slug, { status: "provisioning", startedAt: new Date().toISOString(), step: "queued" });
+		log("site.queued", { site: org.slug });
+		return;
+	}
 	const timings: Partial<Record<ProvisionStep, number>> = {};
 	let lap = Date.now();
 	/** Record how long the step that just ended took, and announce the next one. */
@@ -220,6 +229,8 @@ export async function createSiteForOrg(
 			startedAt,
 			error: error instanceof Error ? error.message : String(error),
 		}).catch(() => {});
+	} finally {
+		await releaseSlot(org.slug).catch(() => {});
 	}
 }
 

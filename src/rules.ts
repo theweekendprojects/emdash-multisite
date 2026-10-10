@@ -76,7 +76,7 @@ interface CreatedOrg {
 }
 
 /** Provisioning phases, in order. Shown in the wizard and timed in the `ready` status. */
-export type ProvisionStep = "tables" | "content" | "identity";
+export type ProvisionStep = "queued" | "tables" | "content" | "identity";
 
 /** Pull the fields provisioning needs out of Better Auth's create-org response. */
 export function parseCreatedOrg(
@@ -98,6 +98,8 @@ export interface Limits {
 	totalSites?: number;
 	/** Media bytes one site may hold (sum of `media.size`). Checked before each upload. */
 	mediaBytesPerSite?: number;
+	/** Sites provisioned at the same time, platform-wide (default 3). The rest wait their turn. */
+	concurrentProvisions?: number;
 }
 
 /** Object key a site's media lives under in the shared bucket. */
@@ -223,11 +225,19 @@ export const RECONCILE_MAX_PER_TICK = 10;
 export const RECONCILE_START_BUDGET_MS = 150_000;
 export const mayStartAnother = (done: number, elapsedMs: number): boolean => done < RECONCILE_MAX_PER_TICK && elapsedMs < RECONCILE_START_BUDGET_MS;
 
+/** Provisioning slots (see slots.ts): the default cap, how long a slot lives if its holder dies, how long one attempt waits, and how soon a queued site is retried. */
+export const DEFAULT_CONCURRENT_PROVISIONS = 3;
+export const SLOT_PREFIX = "multisite:slot:";
+export const SLOT_TTL_MS = 150_000;
+export const SLOT_WAIT_MS = 6_000;
+export const QUEUED_RETRY_MS = 8_000;
+
 /** Should provisioning run (again) for a site with this status? */
 export function needsReconcile(status: SiteStatus | null, now: number, staleMs = STALE_PROVISIONING_MS): boolean {
 	if (!status) return true;
 	if (status.status === "failed") return true;
-	if (status.status === "provisioning") return now - Date.parse(status.startedAt) > staleMs;
+	// A site waiting for a slot is retried soon (every few seconds, so two attempts never overlap); a dead run is detected by age.
+	if (status.status === "provisioning") return now - Date.parse(status.startedAt) > (status.step === "queued" ? QUEUED_RETRY_MS : staleMs);
 	return false;
 }
 

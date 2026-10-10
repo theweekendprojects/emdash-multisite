@@ -147,6 +147,7 @@ function Wizard(props: { me: Me; onDone: () => void }) {
 
 	if (progress) {
 		const labels: Record<string, string> = {
+			queued: "Waiting for a free slot\u2026",
 			tables: "Creating your site\u2026",
 			content: "Adding starter content\u2026",
 			identity: "Setting up your account\u2026",

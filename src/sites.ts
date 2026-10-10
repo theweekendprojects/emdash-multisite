@@ -58,6 +58,7 @@ export function assertSitesConfig(c: SitesConfig): void {
 	if (c.deleteGraceDays !== undefined && (!Number.isInteger(c.deleteGraceDays) || c.deleteGraceDays < 0)) {
 		throw new Error("[multisite] deleteGraceDays must be a non-negative integer");
 	}
+	if (c.limits?.concurrentProvisions !== undefined && c.limits.concurrentProvisions < 1) throw new Error("[multisite] limits.concurrentProvisions must be at least 1");
 	for (const [k, v] of Object.entries(c.limits ?? {})) {
 		if (v !== undefined && (!Number.isInteger(v) || v < 0)) throw new Error(`[multisite] limits.${k} must be a non-negative integer`);
 	}
