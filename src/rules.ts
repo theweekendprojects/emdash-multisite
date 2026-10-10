@@ -187,7 +187,8 @@ export function demoGuard(method: string, pathname: string): number | null {
 const escapeHtml = (v: string) => v.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 /** The strip shown at the bottom of a demo page. `url` is where "Use this theme" goes. */
 export function demoBannerHtml(themeName: string, url: string): string {
-	return `<div role="region" aria-label="Theme demo" style="position:fixed;inset:auto 0 0 0;z-index:2147483647;display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap;padding:10px 16px;background:#111827;color:#fff;font:500 14px/1.4 system-ui,sans-serif">`
+	// The strip is fixed to the bottom; padding keeps it from covering the footer (theme switcher, links).
+	return `<style>body{padding-bottom:64px}</style><div role="region" aria-label="Theme demo" style="position:fixed;inset:auto 0 0 0;z-index:2147483647;display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap;padding:10px 16px;background:#111827;color:#fff;font:500 14px/1.4 system-ui,sans-serif">`
 		+ `<span>This is a demo of the ${escapeHtml(themeName)} theme.</span>`
 		+ `<a href="${escapeHtml(url)}" style="background:#fff;color:#111827;padding:6px 12px;border-radius:8px;text-decoration:none;font-weight:600">Use this theme</a></div>`;
 }

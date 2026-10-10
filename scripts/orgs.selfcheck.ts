@@ -147,6 +147,7 @@ check("backup due: none yet, a day old, fresh", [backupDue(undefined, t0), backu
 check("demo: pages, search and media files are public", ["/", "/posts/hello", "/rss.xml", "/_emdash/api/search", "/_emdash/api/media/file/a.png", "/_image"].map((p) => demoGuard("GET", p)), [null, null, null, null, null, null]);
 check("demo: writes are refused", [demoGuard("POST", "/"), demoGuard("DELETE", "/posts/x"), demoGuard("PUT", "/_emdash/api/search")], [405, 405, 405]);
 check("demo: admin, auth, plugin and write APIs are hidden", ["/_emdash/admin", "/_emdash/api/content/posts", "/_emdash/api/auth/me", "/api/auth/sign-in/email", "/api/multisite/me", "/_multisite/handoff", "/_emdash/api/searchx/../content"].map((p) => demoGuard("GET", p)), [404, 404, 404, 404, 404, 404, 404]);
+check("demo banner leaves room so it does not cover the footer", demoBannerHtml("x", "https://a").includes("padding-bottom"), true);
 check("demo banner escapes the theme name and the link", demoBannerHtml("<b>x</b>", 'https://a/?x="1"').includes("&#60;b&#62;x&#60;/b&#62;") && !demoBannerHtml("x", 'https://a/?x="1"').includes('"1"'), true);
 check("links: visitor on a site with sign-up on gets Sign in and Sign up (Sign up is the call to action)", authLinksFor({ signup: true, account: "/account", user: null }), [{ label: "Sign in", href: "/login" }, { label: "Sign up", href: "/signup", cta: true }]);
 check("links: visitor on a site with sign-up off gets nothing", authLinksFor({ signup: false, account: "/account", user: null }), []);

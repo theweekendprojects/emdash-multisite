@@ -210,7 +210,7 @@ function Wizard(props: { me: Me; onDone: () => void }) {
 			h("button", { type: "button", style: btn(), onClick: props.onDone }, "Cancel")));
 }
 
-function SiteCard(props: { s: MySite; me: Me; reload: () => void }) {
+function SiteCard(props: { s: MySite; me: Me; reload: () => void; onAppearance: (slug: string) => void }) {
 	const { s, me } = props;
 	const [busy, setBusy] = React.useState(false);
 	const suspended = s.state === "suspended";
@@ -236,7 +236,7 @@ function SiteCard(props: { s: MySite; me: Me; reload: () => void }) {
 					]
 				: null,
 			s.status === "ready" && !suspended && me.themed && (s.role === "owner" || me.staff)
-				? h("a", { href: `/sites/${s.slug}/appearance`, style: btn() }, "Appearance")
+				? h("button", { style: btn(), onClick: () => props.onAppearance(s.slug) }, "Appearance")
 				: null,
 			s.canRetry
 				? h("button", { disabled: busy, style: btn(), onClick: () => run(() => post(`/api/multisite/sites/${s.slug}/retry`, {}), "Could not retry.") }, "Retry setup")
@@ -249,11 +249,67 @@ function SiteCard(props: { s: MySite; me: Me; reload: () => void }) {
 				: null));
 }
 
+/** Appearance of one site: pick another theme (additive, nothing is deleted). Replaces the old standalone page. */
+function Appearance(props: { slug: string; onDone: () => void }) {
+	const [state, setState] = React.useState(null as any);
+	const [demos, setDemos] = React.useState({} as Record<string, string>);
+	const [choice, setChoice] = React.useState("");
+	const [sample, setSample] = React.useState(false);
+	const [busy, setBusy] = React.useState(false);
+	const [msg, setMsg] = React.useState("");
+	const [failed, setFailed] = React.useState(false);
+	React.useEffect(() => {
+		api(`/api/multisite/sites/${props.slug}/appearance`).then((r) => {
+			if (!r.ok) return setFailed(true);
+			setState(r.body);
+			setChoice(r.body.current);
+		});
+		api("/api/multisite/themes").then((r) => {
+			if (r.ok) setDemos(Object.fromEntries((r.body.themes ?? []).filter((t: Theme) => t.demoUrl).map((t: Theme) => [t.id, t.demoUrl])));
+		});
+	}, [props.slug]);
+	if (failed) return h("div", null, h("p", { role: "alert", style: errorText }, "You cannot change this site\u2019s appearance."), h("button", { style: btn(), onClick: props.onDone }, "Back"));
+	if (!state) return h("p", { style: muted }, "Loading\u2026");
+	const list = (xs: string[]) => xs.join(", ");
+	const submit = async (e: any) => {
+		e.preventDefault();
+		setBusy(true);
+		setMsg("Switching\u2026");
+		const r = await post(`/api/multisite/sites/${props.slug}/theme`, { theme: choice, includeContent: sample });
+		setBusy(false);
+		if (!r.ok) return setMsg(r.body?.message || r.body?.code || "Could not switch the theme.");
+		setState({ ...state, current: choice, themes: state.themes.map((t: any) => ({ ...t, current: t.id === choice })) });
+		setMsg("Theme switched. It shows within a minute.");
+	};
+	return h("form", { onSubmit: submit, style: { display: "grid", gap: 12 } },
+		h("div", null, h("h2", { style: { margin: 0, fontSize: 18 } }, `Appearance \u00b7 ${state.name}`),
+			h("p", { style: muted }, "Switching keeps all of your content. Anything the new theme does not show is hidden, and comes back if you switch back.")),
+		h("fieldset", { style: { border: 0, padding: 0, margin: 0, display: "grid", gap: 8 } },
+			h("legend", { style: { fontWeight: 600, marginBottom: 6, padding: 0 } }, "Theme"),
+			...state.themes.map((t: any) =>
+				h("label", { key: t.id, style: { display: "flex", gap: 10, alignItems: "flex-start", padding: "10px 12px", borderRadius: 10, cursor: "pointer",
+						border: choice === t.id ? "1px solid #2563eb" : border, boxShadow: choice === t.id ? "0 0 0 1px #2563eb" : "none" } },
+					h("input", { type: "radio", name: "theme", value: t.id, checked: choice === t.id, onChange: () => setChoice(t.id), style: { marginTop: 4 } }),
+					h("span", null, h("strong", null, t.name + (t.current ? " (current)" : "")), h("small", { style: { display: "block", opacity: 0.65 } }, t.description),
+						!t.current && t.adds.length ? h("small", { style: { display: "block", opacity: 0.65 } }, `Adds: ${list(t.adds)}`) : null,
+						!t.current && t.hides.length ? h("small", { style: { display: "block", opacity: 0.65 } }, `Hides: ${list(t.hides)}`) : null,
+						demos[t.id] ? h("a", { href: demos[t.id], target: "_blank", rel: "noopener", style: { fontSize: 13 }, onClick: (e: any) => e.stopPropagation() }, "Preview \u2197") : null)))),
+		h("label", { style: { display: "flex", gap: 8, alignItems: "center", fontSize: 14 } },
+			h("input", { type: "checkbox", checked: sample, onChange: (e: any) => setSample(e.target.checked) }), "Add sample content for any new sections"),
+		h("p", { role: "status", "aria-live": "polite", style: muted }, msg),
+		h("div", { style: { display: "flex", gap: 8 } },
+			h("button", { type: "submit", disabled: busy || choice === state.current, style: { ...btn("primary"), opacity: busy || choice === state.current ? 0.5 : 1 } }, "Switch theme"),
+			h("button", { type: "button", style: btn(), onClick: props.onDone }, "Back")));
+}
 function SitesTab() {
 	const [me, setMe] = React.useState(null as Me | null);
 	const [failed, setFailed] = React.useState(false);
 	const [creating, setCreating] = React.useState(
 		typeof location !== "undefined" && new URLSearchParams(location.search).has("new"),
+	);
+	// `?appearance=<slug>` opens a site's theme picker directly (the site admin links here).
+	const [appearance, setAppearance] = React.useState(
+		(typeof location !== "undefined" && new URLSearchParams(location.search).get("appearance")) || (null as string | null),
 	);
 	const timer = React.useRef(0 as any);
 
@@ -271,6 +327,8 @@ function SitesTab() {
 
 	if (failed) return h("p", { role: "alert" }, "Could not load your sites.");
 	if (!me) return h("p", { style: muted }, "Loading\u2026");
+	if (appearance) return h(Appearance, { slug: appearance, onDone: () => { setAppearance(null); if (typeof history !== "undefined") history.replaceState(null, "", location.pathname); load(); } });
+	if (appearance) return h(Appearance, { slug: appearance, onDone: () => { setAppearance(null); load(); } });
 	if (creating) return h(Wizard, { me, onDone: () => { setCreating(false); load(); } });
 
 	const atLimit = me.max !== null && me.owned >= me.max;
@@ -281,7 +339,7 @@ function SitesTab() {
 			atLimit ? null : h("button", { style: { ...btn("primary"), opacity: me.emailVerified ? 1 : 0.5 }, disabled: !me.emailVerified, onClick: () => setCreating(true) }, "Create site")),
 		!me.emailVerified ? h("p", { style: muted }, "Verify your email address to create sites.") : null,
 		me.sites.length === 0 ? h("p", { style: muted }, "You have no sites yet.") : null,
-		...me.sites.map((s: MySite) => h(SiteCard, { key: s.slug, s, me, reload: load })));
+		...me.sites.map((s: MySite) => h(SiteCard, { key: s.slug, s, me, reload: load, onAppearance: setAppearance })));
 }
 
 export const sitesPlugin = createAuthPlugin("multisite-sites", () => ({

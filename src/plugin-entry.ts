@@ -14,15 +14,13 @@ import { definePlugin } from "emdash";
 import { appearanceState } from "./console.ts";
 import { sitesConfig } from "./config.ts";
 import { PLUGIN_ID, PLUGIN_PAGE_PATH, PLUGIN_VERSION } from "./plugin.ts";
-import { signUpOpen, switchTheme } from "./orgs.ts";
-import { themeProblem } from "./rules.ts";
+import { signUpOpen } from "./orgs.ts";
 import { activeSite, scopeState } from "./scope.ts";
 import { listSites } from "./fleet.ts";
 import { runFleetAction } from "./fleet-actions.ts";
 import { PURGE_FORM_ACTION, fleetBlocks, parseFleetAction } from "./fleet-blocks.ts";
 import { isSiteId } from "./rewrite.ts";
 
-const SWITCH_ACTION = "switch_theme";
 
 interface Interaction {
 	type?: string;
@@ -60,47 +58,23 @@ async function buildPage(toast?: Page["toast"]): Promise<Page> {
 		text: `Public sign-up is ${(await signUpOpen(slug)) ? "ON: visitors can create an account" : "OFF: only people you add can sign in"}. Change it in Settings, Better Auth, "Allow new sign-ups".`,
 	});
 
-	if (state.themes.length > 1) {
+	if (state.themes.length > 1 && sites.appUrl) {
+		// One home for theme switching: the Sites tab of the account page (Better Auth UI).
+		const current = state.themes.find((t) => t.current);
 		blocks.push({ type: "divider" }, { type: "header", text: "Appearance" });
+		blocks.push({ type: "context", text: `Theme: ${current?.name ?? state.current}. Switching keeps all of your content; anything the new theme does not show is hidden and comes back if you switch back.` });
 		blocks.push({
-			type: "context",
-			text: "Switching keeps all of your content. Anything the new theme does not show is hidden, and comes back if you switch back.",
-		});
-		if (sites.appUrl) {
-			blocks.push({
-				type: "actions",
-				elements: [
-					{
-						type: "link" as const,
-						label: "Browse themes as cards",
-						target: { kind: "external" as const, url: `${sites.appUrl}/sites/${state.slug}/appearance` },
-						appearance: "secondary" as const,
-					},
-				],
-			});
-		}
-		const others = state.themes.filter((t) => !t.current);
-		for (const t of others) {
-			const parts = [t.adds.length ? `adds ${t.adds.join(", ")}` : "", t.hides.length ? `hides ${t.hides.join(", ")}` : ""].filter(Boolean);
-			blocks.push({ type: "context", text: `${t.name}: ${t.description}${parts.length ? ` (${parts.join("; ")})` : ""}` });
-		}
-		blocks.push({
-			type: "form",
-			block_id: "theme",
-			fields: [
+			type: "actions",
+			elements: [
 				{
-					type: "select",
-					action_id: "theme",
-					label: "Theme",
-					options: state.themes.map((t) => ({ label: t.current ? `${t.name} (current)` : t.name, value: t.id })),
-					initial_value: state.current,
+					type: "link" as const,
+					label: "Change theme",
+					target: { kind: "external" as const, url: `${sites.appUrl}/account/sites?appearance=${state.slug}` },
+					appearance: "secondary" as const,
 				},
-				{ type: "toggle", action_id: "sample", label: "Add sample content for any new sections", initial_value: false },
 			],
-			submit: { label: "Switch theme", action_id: SWITCH_ACTION },
 		});
 	}
-
 	if (sites.appUrl) {
 		const link = (path: string, label: string) => ({
 			type: "link" as const,
@@ -142,26 +116,6 @@ export function createPlugin() {
 							return fleetPage({ message: r.message, type: r.ok ? "success" : "error" });
 						}
 						return fleetPage();
-					}
-					if (interaction.type === "form_submit" && interaction.action_id === SWITCH_ACTION) {
-						const sites = sitesConfig();
-						const theme = interaction.values?.theme;
-						const issue = themeProblem(theme, sites?.themes);
-						if (!sites || issue || typeof theme !== "string") {
-							return buildPage({ message: issue ?? "Choose a theme.", type: "error" });
-						}
-						const slug = activeSite();
-						const current = (await appearanceState(slug, sites))?.current;
-						try {
-							await switchTheme(sites, slug, theme, { includeContent: interaction.values?.sample === true });
-						} catch (error) {
-							console.error(`[multisite] switching "${slug}" to "${theme}" failed:`, error);
-							return buildPage({ message: "Could not switch the theme. Try again.", type: "error" });
-						}
-						return buildPage({
-							message: theme === current ? "Theme re-applied." : "Theme switched. It shows within a minute.",
-							type: "success",
-						});
 					}
 					return buildPage();
 				},

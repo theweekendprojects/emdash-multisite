@@ -315,6 +315,8 @@ export async function onRequest(context: Ctx, next: Next): Promise<Response> {
 			if (!(await sessionUserId(context))) {
 				return Response.redirect(new URL(`/login?redirect=${encodeURIComponent(pathname)}`, context.url), 302);
 			}
+			// With the account tab, theme switching lives there (one home for it); the standalone page is for hosts without the tab.
+			if (sites.accountTab) return redirectTo(`/account/sites?appearance=${appearancePage[1]}`);
 			return html(consolePageHtml("appearance", appearancePage[1]), 200);
 		}
 		const appearanceApi = /^\/api\/multisite\/sites\/([a-z0-9-]+)\/(appearance|theme)$/.exec(pathname);

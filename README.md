@@ -398,6 +398,13 @@ continues after the response. Only reachable with `plugins:manage`, which on the
 built by `fleet-blocks.ts` (pure, self-checked) and the actions run in `fleet-actions.ts`. JSON for scripts:
 `GET /api/multisite/fleet` (staff).
 
+## Theme switching lives in the account page
+Choosing another theme for a site is a view of the **Sites** tab (Better Auth UI): the site card's **Appearance** button
+(or `/account/sites?appearance=<slug>`) shows every theme with what it adds and hides, a Preview link when a demo exists,
+and a **Switch theme** button. The old standalone `/sites/<slug>/appearance` address redirects there (hosts without the account
+tab keep the old page). The site's own admin Site page shows the current theme and a **Change theme** link to the same view;
+it no longer carries a second picker.
+
 ## Public theme demos
 A template site (`tpl-<theme>`) is a seeded copy of its theme, so it doubles as a public demo with no extra content:
 give it an address like any site (a `hosts` entry, or `tpl-<theme>.<wildcard>` automatically) and visitors can browse it.
@@ -405,7 +412,7 @@ Demos are read-only: only GET/HEAD, the admin, auth, plugin and write APIs answe
 media files work. Each page gets a strip at the bottom, "This is a demo of the X theme. Use this theme", which opens the
 create-site wizard with the theme preselected (`/account/sites?new=1&theme=blog`). The theme pickers show a **Preview**
 link for every theme whose template is complete and has an address (`demoUrl` in `/api/multisite/themes`, memoised 60 s).
-The strip needs `HTMLRewriter` (Workers) and `appUrl`. A template needs `emdash:setup_complete` for its search API;
+The strip is fixed to the bottom and the page gets bottom padding so it never covers the footer. It needs `HTMLRewriter` (Workers) and `appUrl`. A template needs `emdash:setup_complete` for its search API;
 `buildTemplate` sets it. Check: `multisite-smoke/scripts/demo-check.mjs`.
 
 ## Using the package (private distribution)
