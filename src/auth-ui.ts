@@ -78,7 +78,7 @@ const adminLink = (slug: string, path: string) => `/sites/${slug}/open-admin?nex
 /** A picture of a look (a screenshot of its demo). */
 function Shot(props: { look?: Look; height?: number }) {
 	const src = props.look?.preview;
-	return h("div", { style: { aspectRatio: "16 / 10", maxHeight: props.height, overflow: "hidden", borderRadius: 10, background: "rgba(127,127,127,.12)" } },
+	return h("div", { style: { ...(props.height ? { height: props.height } : { aspectRatio: "16 / 10" }), overflow: "hidden", borderRadius: 10, background: "rgba(127,127,127,.12)" } },
 		src ? h("img", { src, alt: "", loading: "lazy", style: { width: "100%", height: "100%", objectFit: "cover", objectPosition: "top", display: "block" } }) : null);
 }
 
@@ -160,7 +160,7 @@ function Wizard(props: { me: Me; looks: Look[]; onDone: () => void }) {
 			h("div", null, h("h2", { style: { margin: 0 } }, "Your site is live"), h("p", { style: muted }, progress.name)),
 			h("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
 				h("a", { href: adminLink(progress.slug, "/_emdash/admin"), target: "_blank", rel: "noopener", className: linkBtn("primary") }, "Edit my site"),
-				h("a", { href: check.url || "/", target: "_blank", rel: "noopener", className: linkBtn("secondary") }, "View my site")),
+				check.url ? h("a", { href: check.url, target: "_blank", rel: "noopener", className: linkBtn("secondary") }, "View my site") : null),
 			base.length
 				? h("div", { style: { display: "grid", gap: 8 } }, h("strong", null, "Get started"),
 						...base.map((c) => h("a", { key: c.path + c.label, href: adminLink(progress.slug, c.path), target: "_blank", rel: "noopener",
