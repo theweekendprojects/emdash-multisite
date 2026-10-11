@@ -52,3 +52,7 @@ export async function verifyHandoff(secret: string, token: string, site: string,
 		return null;
 	}
 }
+
+/** Where a handoff may land: an admin path on the tenant only, never another host. */
+export const safeNext = (v: string | null): string =>
+	v && /^\/_emdash\/[\w\-./?=&%]*$/.test(v) && !v.includes("//") && !v.includes("..") ? v : "/_emdash/admin";

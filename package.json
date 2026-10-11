@@ -32,7 +32,8 @@
     "@emdash-cms/cloudflare": "*",
     "kysely": ">=0.29.0",
     "@better-auth-ui/core": "*",
-    "react": "*"
+    "react": "*",
+    "@heroui/react": ">=3.2.0"
   },
   "peerDependenciesMeta": {
     "@emdash-cms/cloudflare": {
@@ -42,6 +43,9 @@
       "optional": true
     },
     "react": {
+      "optional": true
+    },
+    "@heroui/react": {
       "optional": true
     }
   },

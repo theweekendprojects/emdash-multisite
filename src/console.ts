@@ -118,6 +118,8 @@ export async function appearanceState(slug: string, config: SitesConfig): Promis
 			id,
 			name: t.name,
 			description: t.description ?? "",
+			pitch: t.pitch,
+			preview: t.preview,
 			current: id === current,
 			...switchSummary(config.themes!, current, id),
 		})),

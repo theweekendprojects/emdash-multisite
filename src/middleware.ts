@@ -36,7 +36,7 @@ import { log } from "./log.ts";
 import { PASSWORD_PATHS, syncRecentPasswords } from "./passwords.ts";
 import { backupSite, listBackups, restoreSite } from "./backup.ts";
 import { sitesConfig } from "./config.ts";
-import { signHandoff, verifyHandoff } from "./handoff.ts";
+import { safeNext, signHandoff, verifyHandoff } from "./handoff.ts";
 import { purgeSite } from "./purge.ts";
 import { siteUrl } from "./sites.ts";
 import { effectiveLimits, TEMPLATE_PREFIX, demoBannerHtml, demoGuard, isTemplateId, lostLimitRace, SIGNUP_PATH, emailDomainBlocked, DEFAULT_DELETE_GRACE_DAYS, DEFAULT_LIMITS, DEFAULT_POST_LOGIN_PATH, csrfOk, isPurgeDue, loginEntryRedirect, transition, type SiteState, type StateAction, createProblem, needsReconcile, effectiveTheme, isThemeRouteRequest, isThemed, themeFromMetadata, themeProblem, themeRoute } from "./rules.ts";
@@ -230,7 +230,7 @@ async function acceptHandoff(ctx: Ctx, site: string): Promise<Response> {
 	if (!(await siteHasUser(site, claims.uid))) return handoffFailed();
 	if (!(await consumeHandoffNonce(site, claims.nonce, claims.exp))) return handoffFailed();
 	ctx.session?.set("user", { id: claims.uid });
-	return redirectTo("/_emdash/admin");
+	return redirectTo(safeNext(ctx.url.searchParams.get("next")));
 }
 
 export async function onRequest(context: Ctx, next: Next): Promise<Response> {
@@ -392,7 +392,7 @@ export async function onRequest(context: Ctx, next: Next): Promise<Response> {
 				return html("Not found", 404);
 			}
 			const token = await signHandoff(await handoffSecret(), { uid: userId, site: slug });
-			return redirectTo(`${base}${HANDOFF_PATH}?t=${encodeURIComponent(token)}`);
+			return redirectTo(`${base}${HANDOFF_PATH}?t=${encodeURIComponent(token)}&next=${encodeURIComponent(safeNext(context.url.searchParams.get("next")))}`);
 		}
 
 		// Customer console. Pages need a session (shell only, no data); the JSON
@@ -421,13 +421,14 @@ export async function onRequest(context: Ctx, next: Next): Promise<Response> {
 			const fallback = effectiveTheme(null, sites.themes, sites.defaultTheme);
 			const demos = await demoUrls(sites);
 			return json(
-				{ default: fallback, themes: entries.map(([id, t]) => ({ id, name: t.name, description: t.description ?? "", ...(demos[id] ? { demoUrl: demos[id] } : {}) })) },
+				{ default: fallback, themes: entries.map(([id, t]) => ({ id, name: t.name, description: t.description ?? "", pitch: t.pitch, preview: t.preview, checklist: t.checklist ?? [], ...(demos[id] ? { demoUrl: demos[id] } : {}) })) },
 				200,
 			);
 		}
 		if (method === "GET" && pathname === "/api/multisite/slug-check") {
 			if (!(await sessionUserId(context))) return json({ code: "UNAUTHORIZED" }, 401);
-			return json(await checkAddress(context.url.searchParams.get("slug"), sites.primary), 200);
+			const checked = await checkAddress(context.url.searchParams.get("slug"), sites.primary);
+			return json(checked.available ? { ...checked, url: siteUrl(String(context.url.searchParams.get("slug")).toLowerCase(), sites) } : checked, 200);
 		}
 
 		// Retry one site's provisioning: its owner or staff. Idempotent, 202 = started.

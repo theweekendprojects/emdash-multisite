@@ -252,6 +252,12 @@ export interface ThemeDef {
 	description?: string;
 	/** EmDash seed (collections, settings, starter content) applied when a site picks this theme. */
 	seed?: unknown;
+	/** Plain-words label for the picker ("A blog") and a one-line pitch ("Write posts and share ideas"). */
+	pitch?: string;
+	/** A screenshot of the theme (a path on the app host), shown on the picker cards. */
+	preview?: string;
+	/** "What next" links shown when the site is ready: a label and an admin path (`/_emdash/admin/...`) on the new site. */
+	checklist?: Array<{ label: string; path: string }>;
 }
 export type Themes = Record<string, ThemeDef>;
 

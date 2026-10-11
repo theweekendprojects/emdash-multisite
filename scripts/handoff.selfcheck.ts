@@ -1,5 +1,5 @@
 /** Checks for the control-plane -> tenant handoff token: `node --no-warnings scripts/handoff.selfcheck.ts` */
-import { HANDOFF_TTL_MS, signHandoff, verifyHandoff } from "../src/handoff.ts";
+import { HANDOFF_TTL_MS, safeNext, signHandoff, verifyHandoff } from "../src/handoff.ts";
 let failed = 0;
 const check = (name: string, got: unknown, want: unknown) => {
 	const ok = JSON.stringify(got) === JSON.stringify(want);
@@ -19,5 +19,7 @@ check("tampered payload rejected", await verifyHandoff("s3cret", `${forged}.${si
 check("garbage rejected", [await verifyHandoff("s3cret", "", "acme", now), await verifyHandoff("s3cret", "a.b.c", "acme", now), await verifyHandoff("s3cret", "x", "acme", now)], [null, null, null]);
 const t2 = await signHandoff("s3cret", { uid: "u1", site: "acme" }, now);
 check("each token has its own nonce", (await verifyHandoff("s3cret", token, "acme", now))?.nonce !== (await verifyHandoff("s3cret", t2, "acme", now))?.nonce, true);
+check("next: admin path kept", safeNext("/_emdash/admin/content/posts"), "/_emdash/admin/content/posts");
+check("next: bad values fall back", ["https://evil.com", "//evil.com", "/other", "/_emdash/../x", "/_emdash//evil.com", null].map(safeNext), Array(6).fill("/_emdash/admin"));
 console.log(failed ? `\n${failed} FAILED` : "\nall passed");
 process.exit(failed ? 1 : 0);
