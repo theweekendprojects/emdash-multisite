@@ -16,7 +16,7 @@
 // @ts-ignore - provided by the host (peer dependency)
 import { createAuthPlugin } from "@better-auth-ui/core";
 // @ts-ignore - provided by the host (peer dependency)
-import { Button, Card, Chip, Input, ProgressBar, buttonVariants } from "@heroui/react";
+import { Button, Card, Chip, Input, ProgressBar, Skeleton, buttonVariants } from "@heroui/react";
 // @ts-ignore - provided by the host (peer dependency)
 import * as React from "react";
 
@@ -80,6 +80,18 @@ function Shot(props: { look?: Look; height?: number }) {
 	const src = props.look?.preview;
 	return h("div", { style: { ...(props.height ? { height: props.height } : { aspectRatio: "16 / 10" }), overflow: "hidden", borderRadius: 10, background: "rgba(127,127,127,.12)" } },
 		src ? h("img", { src, alt: "", loading: "lazy", style: { width: "100%", height: "100%", objectFit: "cover", objectPosition: "top", display: "block" } }) : null);
+}
+
+/** Shimmer while data loads: same footprint as the real cards. */
+const bone = (cls: string) => h(Skeleton, { className: cls });
+function SitesSkeleton() {
+	return h("div", { "aria-hidden": true, style: { display: "grid", gap: 16 } },
+		h("div", { style: { display: "flex", justifyContent: "space-between" } }, bone("h-7 w-32 rounded-lg"), bone("h-9 w-24 rounded-full")),
+		h("div", { style: grid(300) }, ...[0, 1].map((i) => h(Card, { key: i }, h(Card.Content, { style: { display: "grid", gap: 10 } },
+			bone("h-[170px] w-full rounded-xl"), bone("h-5 w-40 rounded-lg"), bone("h-4 w-56 rounded-lg"), bone("h-9 w-32 rounded-full"))))));
+}
+function LookSkeleton() {
+	return h("div", { "aria-hidden": true, style: grid(220) }, ...[0, 1, 2, 3].map((i) => h("div", { key: i, style: { display: "grid", gap: 8 } }, bone("h-[130px] w-full rounded-xl"), bone("h-4 w-28 rounded-lg"), bone("h-3 w-40 rounded-lg"))));
 }
 
 /** Pick a look: big cards with a picture. Used by the create flow and by Change look. */
@@ -227,7 +239,7 @@ function ChangeLook(props: { slug: string; onDone: () => void }) {
 		api("/api/multisite/themes").then((r) => r.ok && setDemos(Object.fromEntries((r.body.themes ?? []).filter((t: Look) => t.demoUrl).map((t: Look) => [t.id, t.demoUrl]))));
 	}, [props.slug]);
 	if (failed) return h("div", null, h("p", { role: "alert" }, "You cannot change this site\u2019s look."), h(Button, { variant: "outline", onPress: props.onDone }, "Back"));
-	if (!state) return h("p", { style: muted }, "Loading\u2026");
+	if (!state) return h(LookSkeleton);
 	const looks: Look[] = state.themes.map((t: Look) => ({ ...t, demoUrl: demos[t.id] }));
 	const submit = async (e: Event) => {
 		e.preventDefault();
@@ -316,7 +328,7 @@ function SitesTab() {
 		return () => clearTimeout(timer.current);
 	}, [load]);
 	if (failed) return h("p", { role: "alert" }, "Could not load your sites. Please reload the page.");
-	if (!me) return h("p", { style: muted }, "Loading\u2026");
+	if (!me) return h(SitesSkeleton);
 	const back = () => { clean(); setView({ kind: "list" }); load(); };
 	if (view.kind === "new") return h(Wizard, { me, looks, onDone: back });
 	if (view.kind === "look" && view.slug) return h(ChangeLook, { slug: view.slug, onDone: back });
