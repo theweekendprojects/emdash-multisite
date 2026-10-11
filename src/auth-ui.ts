@@ -25,6 +25,7 @@ interface MySite {
 	name: string;
 	role: string;
 	theme: string | null;
+	themeId: string | null;
 	status: string;
 	state: "active" | "suspended";
 	url: string | null;
@@ -264,7 +265,7 @@ function SiteCard(props: { s: MySite; me: Me; look?: Look; reload: () => void; o
 	const chip = suspended ? ["Paused", "warning"] : s.status === "provisioning" ? ["Setting up", "default"] : s.status === "failed" ? ["Needs attention", "danger"] : ["Live", "success"];
 	return h(Card, null,
 		h(Card.Content, { style: { display: "grid", gap: 10 } },
-			h(Shot, { look }),
+			h(Shot, { look, height: 170 }),
 			h("div", { style: { display: "flex", justifyContent: "space-between", gap: 8, alignItems: "start" } },
 				h("div", { style: { minWidth: 0 } }, h("strong", { style: { fontSize: 17 } }, s.name),
 					h("p", { style: { ...muted, overflowWrap: "anywhere" } }, (s.url ?? s.slug).replace(/^https?:\/\//, ""))),
@@ -319,7 +320,7 @@ function SitesTab() {
 					h("h3", { style: { margin: 0 } }, "You have no sites yet"), h("p", { style: muted }, "Make one in a minute: pick a look, give it a name, done."),
 					me.emailVerified ? h(Button, { variant: "primary", onPress: () => setView({ kind: "new" }) }, "Create my first site") : null))
 			: h("div", { style: grid(300) },
-					...me.sites.map((s: MySite) => h(SiteCard, { key: s.slug, s, me, look: looks.find((t: Look) => t.id === s.theme), reload: load, onLook: (slug: string) => setView({ kind: "look", slug }) }))));
+					...me.sites.map((s: MySite) => h(SiteCard, { key: s.slug, s, me, look: looks.find((t: Look) => t.id === s.themeId), reload: load, onLook: (slug: string) => setView({ kind: "look", slug }) }))));
 }
 
 export const sitesPlugin = createAuthPlugin("multisite-sites", () => ({

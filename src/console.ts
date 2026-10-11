@@ -15,6 +15,8 @@ export interface MySite {
 	role: string;
 	/** Theme display name, or null when the platform has a single bundled theme. */
 	theme: string | null;
+	/** Theme id (key in `themes`), for matching previews. */
+	themeId: string | null;
 	status: SiteStatus["status"] | "unknown";
 	/** `suspended` sites show but cannot be opened or changed; deleted ones are not listed at all. */
 	state: "active" | "suspended";
@@ -55,13 +57,15 @@ export async function consoleState(userId: string, config: SitesConfig): Promise
 		if (siteState?.state === "deleted") continue;
 		// The site's own option wins over the org metadata: it changes when the owner switches themes.
 		const live = config.themes ? await readSiteTheme(org.slug) : null;
+		const themeId = config.themes ? effectiveTheme(live ?? themeFromMetadata(org.metadata), config.themes, config.defaultTheme) : "";
 		const st = statuses.get(org.slug);
 		const url = siteUrl(org.slug, config);
 		sites.push({
 			slug: org.slug,
 			name: org.name,
 			role: me.role,
-			theme: config.themes ? (config.themes[effectiveTheme(live ?? themeFromMetadata(org.metadata), config.themes, config.defaultTheme)]?.name ?? null) : null,
+			theme: config.themes ? (config.themes[themeId]?.name ?? null) : null,
+			themeId: config.themes ? themeId : null,
 			status: st?.status ?? "unknown",
 			state: siteState?.state === "suspended" ? "suspended" : "active",
 			...(st?.status === "failed" ? { error: st.error } : {}),
