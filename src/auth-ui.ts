@@ -232,12 +232,24 @@ function ChangeLook(props: { slug: string; onDone: () => void }) {
 	const submit = async (e: Event) => {
 		e.preventDefault();
 		setBusy(true);
-		setMsg("Changing the look\u2026");
+		setMsg("Changing the look\u2026 this takes a few seconds.");
 		const r = await post(`/api/multisite/sites/${props.slug}/theme`, { theme: choice, includeContent: sample });
+		if (!r.ok) {
+			setBusy(false);
+			return setMsg(r.body?.message || "Could not change the look. Try again.");
+		}
+		// The switch runs in the background (202): wait until the site really shows the new look.
+		for (let i = 0; i < 60; i++) {
+			await new Promise((res) => setTimeout(res, 1000));
+			const a = await api(`/api/multisite/sites/${props.slug}/appearance`);
+			if (a.ok && a.body.current === choice) {
+				setBusy(false);
+				setState({ ...state, current: choice, themes: state.themes.map((t: any) => ({ ...t, current: t.id === choice })) });
+				return setMsg("Done. Your site has its new look. Your content is safe.");
+			}
+		}
 		setBusy(false);
-		if (!r.ok) return setMsg(r.body?.message || "Could not change the look. Try again.");
-		setState({ ...state, current: choice, themes: state.themes.map((t: any) => ({ ...t, current: t.id === choice })) });
-		setMsg("Done. The new look shows within a minute. Your content is safe.");
+		setMsg("This is taking longer than usual. Wait a minute, then check your sites. If the look did not change, try again.");
 	};
 	return h("form", { onSubmit: submit, style: { display: "grid", gap: 16 } },
 		h("div", null, h("h2", { style: { margin: 0 } }, `Change the look of ${state.name}`),
@@ -247,7 +259,7 @@ function ChangeLook(props: { slug: string; onDone: () => void }) {
 		h("p", { role: "status", "aria-live": "polite", style: muted }, msg),
 		h("div", { style: { display: "flex", gap: 8 } },
 			h(Button, { type: "submit", variant: "primary", isDisabled: busy || choice === state.current }, "Use this look"),
-			h(Button, { variant: "outline", onPress: props.onDone }, "Back")));
+			h(Button, { variant: "outline", isDisabled: busy, onPress: props.onDone }, "Back")));
 }
 
 function SiteCard(props: { s: MySite; me: Me; look?: Look; reload: () => void; onLook: (slug: string) => void }) {
