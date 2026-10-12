@@ -41,7 +41,7 @@ import { purgeSite } from "./purge.ts";
 import { siteUrl } from "./sites.ts";
 import { sql } from "kysely";
 import { getDb } from "emdash/runtime";
-import { hiddenFromSearch, effectiveLimits, TEMPLATE_PREFIX, demoBannerHtml, demoGuard, isTemplateId, lostLimitRace, SIGNUP_PATH, emailDomainBlocked, DEFAULT_DELETE_GRACE_DAYS, DEFAULT_LIMITS, DEFAULT_POST_LOGIN_PATH, csrfOk, isPurgeDue, loginEntryRedirect, transition, type SiteState, type StateAction, createProblem, needsReconcile, effectiveTheme, isThemeRouteRequest, isThemed, themeFromMetadata, themeProblem, themeRoute } from "./rules.ts";
+import { effectiveLimits, TEMPLATE_PREFIX, demoBannerHtml, demoGuard, isTemplateId, lostLimitRace, SIGNUP_PATH, emailDomainBlocked, DEFAULT_DELETE_GRACE_DAYS, DEFAULT_LIMITS, DEFAULT_POST_LOGIN_PATH, csrfOk, isPurgeDue, loginEntryRedirect, transition, type SiteState, type StateAction, createProblem, needsReconcile, effectiveTheme, isThemeRouteRequest, isThemed, themeFromMetadata, themeProblem, themeRoute } from "./rules.ts";
 import { isSiteId } from "./rewrite.ts";
 import { scopeState } from "./scope.ts";
 import { resolveSite, type SitesConfig } from "./sites.ts";
@@ -214,42 +214,6 @@ function unavailable(state: SiteState): Response {
 		: html("<!doctype html><meta charset=utf-8><title>Site unavailable</title><h1>This site is unavailable</h1><p>It has been suspended. If this is your site, contact support.</p>", 503);
 }
 
-/**
- * `access` (members-only / premium entries): the public search API must not leak titles and snippets of
- * entries the reader may not open. Drops those items from the JSON answer; any failure leaves it unchanged
- * for collections without an `access` column.
- */
-async function hideProtectedSearch(ctx: Ctx, response: Response): Promise<Response> {
-	if (!response.ok || !response.headers.get("content-type")?.includes("json")) return response;
-	const body = (await response.clone().json().catch(() => null)) as { data?: { items?: Array<{ collection?: string; id?: string }> } } | null;
-	const items = body?.data?.items;
-	if (!Array.isArray(items) || items.length === 0) return response;
-	const user = (ctx.locals as { user?: { role?: number } } | undefined)?.user ?? null;
-	if ((user?.role ?? 0) >= 20) return response;
-	const levels = new Map<string, unknown>();
-	const db = await getDb();
-	// The site can switch content access off in its Better Auth settings (default on); then nothing is hidden.
-	const off = await sql<{ value: string }>`SELECT value FROM options WHERE name = ${"plugin:better-auth-settings:settings:contentAccessEnabled"}`.execute(db).catch(() => null);
-	if (off?.rows[0]?.value === "false") return response;
-	for (const collection of new Set(items.map((i) => i.collection))) {
-		if (typeof collection !== "string" || !/^[a-z][a-z0-9_]*$/.test(collection)) continue;
-		const ids = items.filter((i) => i.collection === collection && typeof i.id === "string").map((i) => i.id as string);
-		if (ids.length === 0) continue;
-		try {
-			const rows = await sql<{ id: string; access: string | null }>`SELECT id, access FROM ${sql.table(`ec_${collection}`)} WHERE id IN (${sql.join(ids)})`.execute(db);
-			for (const r of rows.rows) levels.set(`${collection}:${r.id}`, r.access);
-		} catch {
-			// No `access` column on this collection: everything in it is public.
-		}
-	}
-	const kept = items.filter((i) => !hiddenFromSearch(levels.get(`${i.collection}:${i.id}`), user));
-	if (kept.length === items.length) return response;
-	const headers = new Headers(response.headers);
-	headers.delete("content-length");
-	headers.set("cache-control", "private, no-store");
-	return new Response(JSON.stringify({ ...body, data: { ...body?.data, items: kept } }), { status: response.status, headers });
-}
-
 const HANDOFF_PATH = "/_multisite/handoff";
 const noStore = { "cache-control": "no-store", "referrer-policy": "no-referrer" };
 const redirectTo = (location: string) => new Response(null, { status: 302, headers: { location, ...noStore } });
@@ -287,7 +251,6 @@ export async function onRequest(context: Ctx, next: Next): Promise<Response> {
 			if (blocked) return unavailable(blocked);
 			if (isTemplateId(site)) return serveDemo(context, sites, site, next);
 			if (context.request.method === "GET" && context.url.pathname === HANDOFF_PATH) return acceptHandoff(context, site);
-			if (context.request.method === "GET" && context.url.pathname === "/_emdash/api/search") return hideProtectedSearch(context, await next());
 			return themedNext(context, sites, site, next);
 		}
 		const { pathname } = context.url;
