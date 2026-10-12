@@ -228,6 +228,9 @@ async function hideProtectedSearch(ctx: Ctx, response: Response): Promise<Respon
 	if ((user?.role ?? 0) >= 20) return response;
 	const levels = new Map<string, unknown>();
 	const db = await getDb();
+	// The site can switch content access off in its Better Auth settings (default on); then nothing is hidden.
+	const off = await sql<{ value: string }>`SELECT value FROM options WHERE name = ${"plugin:better-auth-settings:settings:contentAccessEnabled"}`.execute(db).catch(() => null);
+	if (off?.rows[0]?.value === "false") return response;
 	for (const collection of new Set(items.map((i) => i.collection))) {
 		if (typeof collection !== "string" || !/^[a-z][a-z0-9_]*$/.test(collection)) continue;
 		const ids = items.filter((i) => i.collection === collection && typeof i.id === "string").map((i) => i.id as string);

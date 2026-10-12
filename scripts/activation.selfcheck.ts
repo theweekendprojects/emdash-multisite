@@ -9,6 +9,7 @@ import { runMigrations } from "emdash/db";
 import { SchemaRegistry } from "emdash";
 import { createDialect } from "emdash/db/sqlite";
 import { siteDialect, runAsSite, currentSite } from "../src/dialect.ts";
+// @ts-expect-error private module, no types
 import { r as activateMediaUsageCapture } from "../../multisite-smoke/node_modules/emdash/dist/activation-xomsCMJg.mjs";
 import { rmSync } from "node:fs";
 import assert from "node:assert/strict";
