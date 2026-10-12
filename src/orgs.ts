@@ -187,12 +187,13 @@ export async function createSiteForOrg(
 		});
 		if (!owner) throw new Error(`owner ${org.ownerUserId} not found on the control plane`);
 
-		// 3. write them into the new site: owner becomes admin (role 50), verified
+		// 3. write them into the new site: owner becomes admin (EmDash role 50 and Better Auth role "admin", or the
+		//    Users page and Make premium would be refused for the person who owns the site), verified
 		await runAsSite(org.slug, async () => {
 			await sql`INSERT INTO users (id, email, name, avatar_url, role, email_verified, data, created_at, updated_at, disabled)
-				VALUES (${owner.id}, ${owner.email}, ${owner.name}, ${owner.avatar_url}, 50, 1, ${owner.data},
+				VALUES (${owner.id}, ${owner.email}, ${owner.name}, ${owner.avatar_url}, 50, 1, json_set(COALESCE(${owner.data}, '{}'), '$.role', 'admin'),
 					${owner.created_at}, ${owner.updated_at}, 0)
-				ON CONFLICT(id) DO UPDATE SET role = 50, email_verified = 1`.execute(db);
+				ON CONFLICT(id) DO UPDATE SET role = 50, email_verified = 1, data = json_set(COALESCE(users.data, '{}'), '$.role', 'admin')`.execute(db);
 			for (const r of storage) {
 				await sql`INSERT INTO _plugin_storage (plugin_id, collection, id, data, created_at, updated_at, revision)
 					VALUES (${r.plugin_id}, ${r.collection}, ${r.id}, ${r.data}, ${r.created_at}, ${r.updated_at}, ${r.revision})
