@@ -51,6 +51,12 @@ export const suffixFor = (site: string, primary: string): string =>
 
 /** Quote a (possibly suffixed) identifier. */
 const q = (name: string): string => `"${name.replaceAll('"', '""')}"`;
+/**
+ * A rewritten identifier keeps the quoting it had: "x" stays "x$s", but a bare x becomes `x$s`.
+ * translateRows undoes the suffix on stored DDL and needs this to give back the original text
+ * (core compares a trigger's stored DDL with what it would generate).
+ */
+const qLike = (name: string, wasQuoted: boolean): string => (wasQuoted ? q(name) : `\`${name}\``);
 
 const TOKEN =
 	/\s+|'(?:[^']|'')*'|"(?:[^"]|"")*"|`[^`]*`|--[^\n]*|\/\*[\s\S]*?\*\/|[A-Za-z_][A-Za-z0-9_$]*|\d+(?:\.\d+)?|[\s\S]/gy;
@@ -121,7 +127,7 @@ export function rewriteSql(sql: string, suffix: string): string {
 		if (objectNamePending && !quoted && /^(INDEX|TRIGGER|UNIQUE|IF|NOT|EXISTS|CREATE|DROP)$/i.test(tok)) continue;
 		if (objectNamePending) {
 			objectNamePending = false;
-			if (!name.includes("$")) toks[i] = q(name + suffix);
+			if (!name.includes("$")) toks[i] = qLike(name + suffix, quoted);
 			continue;
 		}
 
@@ -132,7 +138,7 @@ export function rewriteSql(sql: string, suffix: string): string {
 			(upPrev === "ON" && (next === "(" || (isTrigger && next !== "."))) ||
 			(next === "." && prev !== ".") ||
 			isFtsColumn(toks, i, next);
-		if (inTableSlot) toks[i] = q(name + suffix);
+		if (inTableSlot) toks[i] = qLike(name + suffix, quoted);
 	}
 	return toks.join("");
 }
@@ -180,8 +186,12 @@ export function translateRows<R>(sql: string, rows: R[], suffix: string): R[] {
 			const v = copy[k];
 			if (typeof v === "string" && v.endsWith(suffix)) copy[k] = v.slice(0, -suffix.length);
 		}
-		if (typeof copy["sql"] === "string") {
-			copy["sql"] = copy["sql"].replaceAll(new RegExp(`${suffix.replace("$", "\\$")}(?![A-Za-z0-9_$-])`, "g"), "");
+		// DDL text, whatever the column is called (core selects it as `sql` and as `definition`).
+		const sfx = suffix.replace("$", "\\$");
+		const bare = new RegExp(`\`([A-Za-z_][A-Za-z0-9_]*)${sfx}\``, "g");
+		const own = new RegExp(`${sfx}(?![A-Za-z0-9_$-])`, "g");
+		for (const [k, v] of Object.entries(copy)) {
+			if (typeof v === "string" && /^\s*create\s/i.test(v)) copy[k] = v.replaceAll(bare, "$1").replaceAll(own, "");
 		}
 		out.push(copy as unknown as R);
 	}
