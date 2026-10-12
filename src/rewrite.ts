@@ -150,6 +150,8 @@ export function rewriteParams(sql: string, params: readonly unknown[], suffix: s
 	return params.map((p) => {
 		if (typeof p !== "string" || p.includes("$") || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(p)) return p;
 		if (TYPE_WORDS.has(p.toLowerCase())) return p;
+		// A trailing "_" marks a name prefix (core matches its trigger names with substr(name,1,10) = 'emdash_mu_'); suffixing it matches nothing.
+		if (p.endsWith("_")) return p;
 		return anyName || isSiteTable(p) ? p + suffix : p;
 	});
 }

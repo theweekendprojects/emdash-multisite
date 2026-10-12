@@ -14,7 +14,7 @@ import { SchemaRegistry, ContentRepository } from "emdash";
 import { createDialect } from "emdash/db/sqlite";
 import { siteDialect, runAsSite, currentSite } from "../src/dialect.ts";
 import { makeRuntime } from "../src/runtime.ts";
-import { isSiteTable, rewriteSql } from "../src/rewrite.ts";
+import { isSiteTable, rewriteParams, rewriteSql } from "../src/rewrite.ts";
 import { resolveSite } from "../src/sites.ts";
 import { rmSync } from "node:fs";
 
@@ -157,6 +157,8 @@ eq("ContentRepository.findMany is per-site", [await slugsOf("main"), await slugs
 eq("findBySlug cannot see another site's row", await runAsSite("acme", async () => (await new ContentRepository(core).findBySlug("posts", "main-hello")) ?? null), null);
 eq("collection missing on a site fails loudly (no fallback to another site)", await slugsOf("globex").then(() => "returned", (e: Error) => /no such table/.test(e.message)), true);
 
+const trigSql = "SELECT name FROM sqlite_master WHERE type = 'trigger' AND tbl_name = ? AND substr(name, 1, 10) = ?";
+eq("introspection: table name gets the suffix, name prefix does not (media-usage triggers)", rewriteParams(trigSql, ["ec_posts", "emdash_mu_"], "$acme"), ["ec_posts$acme", "emdash_mu_"]);
 console.log(failed ? `\n${failed} FAILED` : "\nall passed");
 raw.close();
 await wrapped.destroy();
