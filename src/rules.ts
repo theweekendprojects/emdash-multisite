@@ -468,3 +468,15 @@ export function isTableOfSite(name: string, slug: string): boolean {
 	const rest = name.slice(i + 1 + slug.length);
 	return rest === "" || /^_(?:data|idx|content|docsize|config)$/.test(rest);
 }
+
+/**
+ * Search results and `access` (members-only / premium entries, see emdash-better-auth `access`):
+ * should an entry with this access level be left out of a search answer for this reader?
+ * Stricter than the list pages on purpose: premium entries show as a teaser there, but the search
+ * answer carries snippets of the text, so only staff (CONTRIBUTOR and above) get them.
+ */
+export function hiddenFromSearch(access: unknown, user: { role?: number } | null | undefined): boolean {
+	if (access === undefined || access === null || access === "" || access === "public") return false;
+	if ((user?.role ?? 0) >= 20) return false;
+	return access === "members" ? !user : true;
+}
