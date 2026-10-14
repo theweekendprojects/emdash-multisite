@@ -30,7 +30,7 @@ import {
 	warm,
 	writeSiteState,
 } from "./registry.ts";
-import { overLimit } from "./abuse.ts";
+import { overLimit, verifyTurnstile } from "./abuse.ts";
 import { demoUrls } from "./demo.ts";
 import { log } from "./log.ts";
 import { PASSWORD_PATHS, syncRecentPasswords } from "./passwords.ts";
@@ -122,9 +122,9 @@ const tooMany = () =>
 		status: 429,
 		headers: { "content-type": "application/json", "cache-control": "no-store", "retry-after": "60" },
 	});
-/** Sign-up: refuse throwaway-mail domains, and brake bursts per client IP. Null = let it through. */
+/** Sign-up: refuse throwaway-mail domains, brake bursts per client IP, and verify Turnstile. Null = let it through. */
 async function guardSignup(ctx: Ctx, sites: SitesConfig): Promise<Response | null> {
-	const body = (await ctx.request.clone().json().catch(() => null)) as { email?: unknown } | null;
+	const body = (await ctx.request.clone().json().catch(() => null)) as { email?: unknown; cfTurnstileResponse?: unknown } | null;
 	if (emailDomainBlocked(body?.email, sites.blockedEmailDomains)) {
 		log("signup.blocked_domain");
 		return json({ code: "EMAIL_DOMAIN_BLOCKED", message: "Please sign up with a permanent email address." }, 400);
@@ -132,6 +132,16 @@ async function guardSignup(ctx: Ctx, sites: SitesConfig): Promise<Response | nul
 	if (await overLimit("SIGNUP_LIMITER", ctx.request.headers.get("cf-connecting-ip") ?? "unknown")) {
 		log("signup.rate_limited");
 		return tooMany();
+	}
+	// OP-13: Turnstile verification on sign-up (skipped when TURNSTILE_SECRET is unset)
+	const clientIp = ctx.request.headers.get("cf-connecting-ip");
+	const turnstileError = await verifyTurnstile(
+		typeof body?.cfTurnstileResponse === "string" ? body.cfTurnstileResponse : undefined,
+		clientIp ?? undefined,
+	);
+	if (turnstileError) {
+		log("signup.turnstile_failed", { ip: clientIp ?? "unknown" });
+		return turnstileError;
 	}
 	return null;
 }
@@ -154,6 +164,12 @@ async function guardOrgCreate(ctx: Ctx, sites: SitesConfig): Promise<Response | 
 	if (!userId) return null;
 	if (await overLimit("CREATE_LIMITER", userId)) {
 		log("create.rate_limited", { user: userId });
+		return tooMany();
+	}
+	// OP-13: Per-IP site creation cap (prevents one IP from creating many sites via different accounts)
+	const clientIp = ctx.request.headers.get("cf-connecting-ip") ?? "unknown";
+	if (await overLimit("CREATE_IP_LIMITER", clientIp)) {
+		log("create.ip_rate_limited", { ip: clientIp });
 		return tooMany();
 	}
 	const orgs = await readOrgs();
@@ -381,6 +397,31 @@ export async function onRequest(context: Ctx, next: Next): Promise<Response> {
 				sites.postLoginPath ?? (sites.accountTab ? "/account/sites" : DEFAULT_POST_LOGIN_PATH),
 			);
 			if (entry) return Response.redirect(new URL(entry, context.url), 302);
+		}
+
+		// OP-27: Legal pages on the control plane (no tracking, no scripts, plain HTML)
+		const legalPages: Record<string, string> = {
+			"/terms": "Terms of Service",
+			"/privacy": "Privacy Policy",
+			"/dpa": "Data Processing Agreement",
+			"/support": "Support",
+		};
+		if (method === "GET" && pathname in legalPages) {
+			const title = legalPages[pathname];
+			// TODO: Replace with real legal copy before launch
+			const content = `<!doctype html>
+<meta charset=utf-8>
+<title>${title}</title>
+<style>
+body{font-family:system-ui,sans-serif;max-width:720px;margin:0 auto;padding:2rem;line-height:1.6}
+h1{margin-bottom:1rem}
+.notice{background:#fef3cd;padding:1rem;border-radius:4px;margin-bottom:2rem}
+</style>
+<div class="notice"><strong>TODO:</strong> Replace this placeholder with real legal text before launch.</div>
+<h1>${title}</h1>
+<p>This is a placeholder for the ${title}. Replace with real legal copy.</p>
+<p><a href="/">← Back to home</a></p>`;
+			return html(content, 200);
 		}
 
 		// "Open admin": sign a one-time link for the user and send them to the tenant.
