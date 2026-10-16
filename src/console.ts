@@ -4,8 +4,8 @@
  * through Better Auth's organization/create so every rule in one place applies.
  */
 import { isStaff } from "./fleet.ts";
-import { isEmailVerified, readAllStates, readAllStatuses, readOrgs, readSiteTheme } from "./registry.ts";
-import { effectiveLimits, effectiveTheme, needsReconcile, slugProblem, switchSummary, themeFromMetadata, type SiteStatus } from "./rules.ts";
+import { isEmailVerified, readActivePlan, readAllStates, readAllStatuses, readOrgs, readSiteTheme, resolveLimits } from "./registry.ts";
+import { effectiveTheme, needsReconcile, slugProblem, switchSummary, themeFromMetadata, type SiteStatus } from "./rules.ts";
 import { siteUrl, type SitesConfig } from "./sites.ts";
 
 export interface MySite {
@@ -35,18 +35,22 @@ export interface ConsoleState {
 	staff: boolean;
 	/** Does the platform offer more than one theme? (Shows the Appearance action.) */
 	themed: boolean;
-	/** Sites owned vs. the cap (`max` null = no cap). */
+	/** Sites owned vs. the cap (`max` null = no cap). The cap is the user's PLAN cap. */
 	owned: number;
 	max: number | null;
+	/** The user's active plan name (lowercased), or null for the free tier. Drives the "N of M used" + Upgrade copy. */
+	plan: string | null;
 }
 
 export async function consoleState(userId: string, config: SitesConfig): Promise<ConsoleState> {
-	const [orgs, statuses, states, emailVerified, staff] = await Promise.all([
+	const [orgs, statuses, states, emailVerified, staff, plan, limits] = await Promise.all([
 		readOrgs(),
 		readAllStatuses(),
 		readAllStates(),
 		isEmailVerified(userId),
 		isStaff(userId),
+		readActivePlan(userId),
+		resolveLimits(userId, config.limits),
 	]);
 	const now = Date.now();
 	const sites: MySite[] = [];
@@ -81,7 +85,9 @@ export async function consoleState(userId: string, config: SitesConfig): Promise
 		staff,
 		themed: Object.keys(config.themes ?? {}).length > 1,
 		owned: sites.filter((s) => s.role === "owner").length,
-		max: effectiveLimits(config.limits).sitesPerUser ?? null,
+		// The user's PLAN cap, not the static config cap, so "N of M used" is true.
+		max: limits.sitesPerUser ?? null,
+		plan,
 	};
 }
 

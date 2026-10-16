@@ -9,7 +9,15 @@ import { getDb } from "emdash/runtime";
 import { currentSite, siteDialect, runAsSite } from "./dialect.ts";
 import { platformEnv } from "./platform-env.ts";
 import { scopeState } from "./scope.ts";
-import { STATE_KEY_PREFIX, parseSiteState, type SiteState, type SiteStatus } from "./rules.ts";
+import {
+	STATE_KEY_PREFIX,
+	parseSiteState,
+	planLimits,
+	limitsForPlan,
+	type Limits,
+	type SiteState,
+	type SiteStatus,
+} from "./rules.ts";
 
 /**
  * Make sure the shared inner dialect exists. On a cold isolate our outer
@@ -95,6 +103,54 @@ export async function isEmailVerified(userId: string): Promise<boolean> {
 		sql<{ v: number }>`SELECT email_verified AS v FROM users WHERE id = ${userId}`.execute(db),
 	);
 	return Number(r.rows[0]?.v ?? 0) === 1;
+}
+
+/**
+ * The plan name of a user's active (or trialing) Better Auth / Stripe
+ * subscription, or `null` when they have none (the free tier). Reads the
+ * control-plane `subscriptions` plugin-storage collection, where
+ * `@better-auth/stripe` stores one row per subscription keyed by `referenceId`
+ * (the user id, our default). Only an "active" or "trialing" status counts; a
+ * canceled/incomplete sub is treated as no plan. Never throws — a read failure
+ * degrades to `null` (free tier), the safe direction.
+ * ponytail: O(subscriptions-for-this-user) JSON scan in app code because the
+ * value is a JSON blob, not columns. Fine (a user has one, maybe two rows).
+ * Upgrade path: index `referenceId` + `status` if this ever gets hot.
+ */
+export async function readActivePlan(userId: string): Promise<string | null> {
+	try {
+		const db = controlDb();
+		const r = await runAsSite(scopeState().primary, () =>
+			sql<{ data: string }>`SELECT data FROM _plugin_storage WHERE collection = 'subscriptions'`.execute(db),
+		);
+		for (const row of r.rows) {
+			let sub: { referenceId?: unknown; plan?: unknown; status?: unknown };
+			try {
+				sub = JSON.parse(row.data);
+			} catch {
+				continue;
+			}
+			if (sub.referenceId !== userId) continue;
+			if (sub.status === "active" || sub.status === "trialing") {
+				return typeof sub.plan === "string" ? sub.plan : null;
+			}
+		}
+	} catch {
+		// Control plane unreadable — fall back to the free tier (safe).
+	}
+	return null;
+}
+
+/**
+ * The effective limits for a user: their active plan's limits merged over the
+ * host's configured limits. A user with no active subscription gets the free
+ * tier. This is the resolver OP-11 called for — the create guard feeds its
+ * result to `createProblem`/`lostLimitRace` in place of the static
+ * `effectiveLimits(sites.limits)`.
+ */
+export async function resolveLimits(userId: string, configured: Limits | undefined): Promise<Limits> {
+	const plan = await readActivePlan(userId);
+	return limitsForPlan(configured, planLimits(plan));
 }
 
 /** Does this site already have its tables? (A site that predates status rows has them but no status.) */

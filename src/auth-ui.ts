@@ -40,6 +40,8 @@ interface Me {
 	staff: boolean;
 	owned: number;
 	max: number | null;
+	/** Active plan name (lowercased), or null for the free tier. */
+	plan: string | null;
 }
 interface Look {
 	id: string;
@@ -57,6 +59,8 @@ interface Look {
 const h = React.createElement;
 const grid = (min: number) => ({ display: "grid", gridTemplateColumns: `repeat(auto-fill, minmax(${min}px, 1fr))`, gap: 16 }) as const;
 const muted = { opacity: 0.65, fontSize: 14, margin: 0 } as const;
+/** Display label for a plan name; null (no subscription) reads as "Free". */
+const planLabel = (plan: string | null): string => (plan ? plan.charAt(0).toUpperCase() + plan.slice(1) : "Free");
 const linkBtn = (variant: string) => buttonVariants({ variant });
 
 async function api(url: string, init: RequestInit = {}) {
@@ -336,7 +340,11 @@ function SitesTab() {
 	return h("div", { style: { display: "grid", gap: 16 } },
 		h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" } },
 			h("div", null, h("h2", { style: { margin: 0 } }, "My sites"),
-				me.max !== null ? h("p", { style: muted }, `${me.owned} of ${me.max} site${me.max === 1 ? "" : "s"} used`) : null),
+				me.max !== null
+					? h("p", { style: muted },
+						`${planLabel(me.plan)} plan — ${me.owned} of ${me.max} site${me.max === 1 ? "" : "s"} used`,
+						full ? h("a", { href: "/account/billing", style: { marginLeft: 8 } }, "Upgrade") : null)
+					: null),
 			full ? null : h(Button, { variant: "primary", isDisabled: !me.emailVerified, onPress: () => setView({ kind: "new" }) }, "New site")),
 		!me.emailVerified ? h("p", { style: muted }, "Confirm your email address to create a site.") : null,
 		me.sites.length === 0

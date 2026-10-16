@@ -113,6 +113,54 @@ export const DEFAULT_LIMITS: Limits = { sitesPerUser: 3 };
 /** The configured limits on top of the defaults: setting one limit (say `mediaBytesPerSite`) must not silently drop the 3-site cap. */
 export const effectiveLimits = (configured: Limits | undefined): Limits => ({ ...DEFAULT_LIMITS, ...configured });
 
+/** The subset of `Limits` a billing plan grants (sites + storage). */
+export type PlanLimits = Pick<Limits, "sitesPerUser" | "mediaBytesPerSite">;
+
+/** GiB in bytes, for readable storage caps. */
+const GiB = 1024 ** 3;
+
+/**
+ * Plan name (the Better Auth / Stripe subscription `plan` field, lowercased) →
+ * resource limits. Kept HERE, not imported from `emdash-better-auth`, so this
+ * private package stays decoupled from the open-source plugin (the plugin owns
+ * the Stripe price catalog + pricing display; this map owns what each tier is
+ * ALLOWED to provision). The two must agree on the tier NAMES — that is the only
+ * contract between them. A plan not in this map falls back to the free tier.
+ *
+ * Mirrors the plugin's ladder: Pro (individual) → Business (team) → Agency
+ * (many client sites) → Enterprise (custom, high ceiling).
+ */
+export const PLAN_LIMITS: Readonly<Record<string, PlanLimits>> = {
+	pro: { sitesPerUser: 3, mediaBytesPerSite: 10 * GiB },
+	business: { sitesPerUser: 10, mediaBytesPerSite: 50 * GiB },
+	agency: { sitesPerUser: 30, mediaBytesPerSite: 150 * GiB },
+	enterprise: { sitesPerUser: 1000, mediaBytesPerSite: 1000 * GiB },
+};
+
+/** Limits for a user with NO active subscription (the free tier baseline). */
+export const FREE_PLAN_LIMITS: PlanLimits = { sitesPerUser: 1, mediaBytesPerSite: 1 * GiB };
+
+/** The limits a plan name grants; unknown/empty (no subscription) → free tier. */
+export const planLimits = (plan: string | null | undefined): PlanLimits =>
+	plan ? (PLAN_LIMITS[plan.toLowerCase()] ?? FREE_PLAN_LIMITS) : FREE_PLAN_LIMITS;
+
+/**
+ * Merge a subscriber's PLAN limits on top of the host's configured limits (which
+ * themselves sit on {@link DEFAULT_LIMITS}). A plan value wins when set; a plan
+ * that omits a key leaves the configured/default value in place, so turning on
+ * billing never drops an unrelated cap. Pure + unit-testable; the caller does
+ * the subscription read and passes the resolved plan name through
+ * {@link planLimits}.
+ */
+export const limitsForPlan = (configured: Limits | undefined, plan: PlanLimits): Limits => {
+	const base = effectiveLimits(configured);
+	return {
+		...base,
+		...(plan.sitesPerUser !== undefined ? { sitesPerUser: plan.sitesPerUser } : {}),
+		...(plan.mediaBytesPerSite !== undefined ? { mediaBytesPerSite: plan.mediaBytesPerSite } : {}),
+	};
+};
+
 export interface CreateContext {
 	/** Signed-in user, or null. */
 	userId: string | null;

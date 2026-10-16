@@ -24,6 +24,7 @@ import {
 	readOrgs,
 	readSiteState,
 	readSiteTheme,
+	resolveLimits,
 	siteExists,
 	siteHasTables,
 	siteHasUser,
@@ -110,7 +111,13 @@ const json = (body: unknown, status: number) =>
 /** Provision a just-created site, unless it lost a creation race (see `lostLimitRace`): then it is deleted unprovisioned. */
 async function createOrRejectSite(sites: SitesConfig, org: NonNullable<ReturnType<typeof parseCreatedOrg>>): Promise<void> {
 	const states = await readAllStates();
-	if (lostLimitRace(org.slug, await readOrgs(), new Set([...states].filter(([, v]) => v.state === "deleted").map(([k]) => k)), effectiveLimits(sites.limits))) {
+	// Plan-aware limit: a subscriber's cap, not the static config cap, so an
+	// upgraded user is not stripped of a legitimately-allowed site by the race
+	// check. Falls back to the free tier when they have no subscription.
+	const raceLimits = org.ownerUserId
+		? await resolveLimits(org.ownerUserId, sites.limits)
+		: effectiveLimits(sites.limits);
+	if (lostLimitRace(org.slug, await readOrgs(), new Set([...states].filter(([, v]) => v.state === "deleted").map(([k]) => k)), raceLimits)) {
 		log("create.race_lost", { site: org.slug, user: org.ownerUserId });
 		await writeSiteState(org.slug, { state: "deleted", at: new Date().toISOString(), reason: "over the site limit (parallel requests)" });
 		return;
@@ -147,7 +154,6 @@ async function guardSignup(ctx: Ctx, sites: SitesConfig): Promise<Response | nul
 }
 async function guardOrgCreate(ctx: Ctx, sites: SitesConfig): Promise<Response | null> {
 	const { primary } = sites;
-	const limits = effectiveLimits(sites.limits);
 	let body: { slug?: unknown; metadata?: unknown } | null = null;
 	try {
 		body = (await ctx.request.clone().json()) as { slug?: unknown; metadata?: unknown };
@@ -174,6 +180,9 @@ async function guardOrgCreate(ctx: Ctx, sites: SitesConfig): Promise<Response | 
 	}
 	const orgs = await readOrgs();
 	const states = await readAllStates();
+	// Plan-aware limit (OP-11): a subscriber gets their plan's cap, everyone else
+	// the free tier. Replaces the former static `effectiveLimits(sites.limits)`.
+	const limits = await resolveLimits(userId, sites.limits);
 	const problem = createProblem(
 		{
 			userId,
