@@ -47,14 +47,14 @@ check("limit message is human", createProblem({ ...ctx, owned: 1 }, { sitesPerUs
 // ---- plans -> limits ----
 check("no subscription -> free tier (1 site)", planLimits(null).sitesPerUser, 1);
 check("unknown plan -> free tier", planLimits("mystery").sitesPerUser, 1);
-check("pro / business / agency site caps", [planLimits("pro").sitesPerUser, planLimits("business").sitesPerUser, planLimits("agency").sitesPerUser], [3, 10, 30]);
+check("pro site cap", planLimits("pro").sitesPerUser, 3);
 check("plan name is case-insensitive", planLimits("PRO").sitesPerUser, 3);
 check("enterprise has a high ceiling, not unlimited", planLimits("enterprise").sitesPerUser, 1000);
 // limitsForPlan: plan wins per-key, configured/default fills the rest.
 check("free tier over a 3-site config caps at 1", limitsForPlan({ sitesPerUser: 3 }, planLimits(null)).sitesPerUser, 1);
 check("pro over the free-tier config lifts the cap to 3", limitsForPlan({ sitesPerUser: 1 }, planLimits("pro")).sitesPerUser, 3);
 check("a plan that omits a key keeps the configured value", limitsForPlan({ sitesPerUser: 5, totalSites: 100 }, { mediaBytesPerSite: 42 }), { sitesPerUser: 5, totalSites: 100, mediaBytesPerSite: 42 });
-check("plan media cap applies", limitsForPlan(undefined, planLimits("business")).mediaBytesPerSite, 50 * 1024 ** 3);
+check("plan media cap applies", limitsForPlan(undefined, planLimits("pro")).mediaBytesPerSite, 10 * 1024 ** 3);
 
 // ---- reconcile ----
 const now = Date.parse("2026-10-08T12:00:00Z");

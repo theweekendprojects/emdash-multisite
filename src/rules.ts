@@ -132,8 +132,10 @@ const GiB = 1024 ** 3;
  */
 export const PLAN_LIMITS: Readonly<Record<string, PlanLimits>> = {
 	pro: { sitesPerUser: 3, mediaBytesPerSite: 10 * GiB },
-	business: { sitesPerUser: 10, mediaBytesPerSite: 50 * GiB },
-	agency: { sitesPerUser: 30, mediaBytesPerSite: 150 * GiB },
+	// Enterprise's built-in caps are a high ceiling only; the real per-customer
+	// caps come from the metadata on their manual Stripe subscription (folded
+	// into a per-user override by the billing webhook). See
+	// emdash-plan/product/better-auth-stripe-features.md.
 	enterprise: { sitesPerUser: 1000, mediaBytesPerSite: 1000 * GiB },
 };
 
