@@ -42,6 +42,8 @@ interface Me {
 	max: number | null;
 	/** Active plan name (lowercased), or null for the free tier. */
 	plan: string | null;
+	/** Billing is on, so the Upgrade link resolves (otherwise /account/billing 404s). */
+	canUpgrade: boolean;
 }
 interface Look {
 	id: string;
@@ -343,7 +345,7 @@ function SitesTab() {
 				me.max !== null
 					? h("p", { style: muted },
 						`${planLabel(me.plan)} plan — ${me.owned} of ${me.max} site${me.max === 1 ? "" : "s"} used`,
-						full ? h("a", { href: "/account/billing", style: { marginLeft: 8 } }, "Upgrade") : null)
+						full && me.canUpgrade ? h("a", { href: "/account/billing", style: { marginLeft: 8 } }, "Upgrade") : null)
 					: null),
 			full ? null : h(Button, { variant: "primary", isDisabled: !me.emailVerified, onPress: () => setView({ kind: "new" }) }, "New site")),
 		!me.emailVerified ? h("p", { style: muted }, "Confirm your email address to create a site.") : null,

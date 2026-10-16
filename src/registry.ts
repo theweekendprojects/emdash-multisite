@@ -142,6 +142,25 @@ export async function readActivePlan(userId: string): Promise<string | null> {
 }
 
 /**
+ * Is Stripe billing turned on for the platform? Reads the control-plane
+ * `emdash-better-auth` setting. Only when this is true does the Better Auth UI
+ * expose `/account/billing`, so the console gates its "Upgrade" link on it (the
+ * route 404s otherwise). Never throws — defaults to off (no Upgrade link).
+ */
+export async function billingEnabled(): Promise<boolean> {
+	try {
+		const db = controlDb();
+		const r = await runAsSite(scopeState().primary, () =>
+			sql<{ value: string }>`SELECT value FROM options WHERE name = 'plugin:better-auth-settings:settings:billingEnabled'`.execute(db),
+		);
+		const v = r.rows[0]?.value;
+		return v === "true" || v === '"true"' || v === "1";
+	} catch {
+		return false;
+	}
+}
+
+/**
  * The effective limits for a user: their active plan's limits merged over the
  * host's configured limits. A user with no active subscription gets the free
  * tier. This is the resolver OP-11 called for — the create guard feeds its

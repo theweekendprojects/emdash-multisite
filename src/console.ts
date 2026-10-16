@@ -4,7 +4,7 @@
  * through Better Auth's organization/create so every rule in one place applies.
  */
 import { isStaff } from "./fleet.ts";
-import { isEmailVerified, readActivePlan, readAllStates, readAllStatuses, readOrgs, readSiteTheme, resolveLimits } from "./registry.ts";
+import { billingEnabled, isEmailVerified, readActivePlan, readAllStates, readAllStatuses, readOrgs, readSiteTheme, resolveLimits } from "./registry.ts";
 import { effectiveTheme, needsReconcile, slugProblem, switchSummary, themeFromMetadata, type SiteStatus } from "./rules.ts";
 import { siteUrl, type SitesConfig } from "./sites.ts";
 
@@ -40,10 +40,12 @@ export interface ConsoleState {
 	max: number | null;
 	/** The user's active plan name (lowercased), or null for the free tier. Drives the "N of M used" + Upgrade copy. */
 	plan: string | null;
+	/** Billing is configured, so `/account/billing` exists and the Upgrade link should show. */
+	canUpgrade: boolean;
 }
 
 export async function consoleState(userId: string, config: SitesConfig): Promise<ConsoleState> {
-	const [orgs, statuses, states, emailVerified, staff, plan, limits] = await Promise.all([
+	const [orgs, statuses, states, emailVerified, staff, plan, limits, canUpgrade] = await Promise.all([
 		readOrgs(),
 		readAllStatuses(),
 		readAllStates(),
@@ -51,6 +53,7 @@ export async function consoleState(userId: string, config: SitesConfig): Promise
 		isStaff(userId),
 		readActivePlan(userId),
 		resolveLimits(userId, config.limits),
+		billingEnabled(),
 	]);
 	const now = Date.now();
 	const sites: MySite[] = [];
@@ -88,6 +91,7 @@ export async function consoleState(userId: string, config: SitesConfig): Promise
 		// The user's PLAN cap, not the static config cap, so "N of M used" is true.
 		max: limits.sitesPerUser ?? null,
 		plan,
+		canUpgrade,
 	};
 }
 
