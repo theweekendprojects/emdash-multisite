@@ -102,6 +102,17 @@ runtime, every query) reads it from ALS/the request db. There is no per-call sit
 
 ## GOTCHAS — the land mines, each one cost real time
 
+- **Provisioning copies the control plane's auth SETTINGS into every tenant — incl. SECRETS.**
+  `createSiteForOrg` (`orgs.ts`) copies all `plugin:better-auth-settings:settings:*` option rows
+  into the new tenant's D1, minus `NOT_INHERITED` (currently only orgEnabled/teamsEnabled/
+  signUpEnabled). So any secret SAVED IN THE ADMIN settings page on the control plane
+  (`betterAuthSecret`, `turnstileSecretKey`, `stripeSecretKey`, `stripeWebhookSecret`,
+  `*ClientSecret`) is copied into every tenant's readable settings — a tenant admin can then read
+  the PLATFORM's secrets. Current mitigation: set platform secrets as Worker env/secrets and keep
+  the admin fields blank (no saved row -> nothing to copy; resolveSettings reads env). TODO/fix:
+  extend `NOT_INHERITED` to every secret key and never inherit secret-typed settings. See
+  `host-my-emdash` AGENTS.md "SECURITY".
+
 - **Caches are site-blind by default. This is THE bug.** EmDash assumes one isolate = one site. If
   you add any cache or a new EmDash release adds one, it leaks across sites unless classified. The
   tripwire (`scripts/caches.selfcheck.ts`, and the build itself) is what catches this. Never silence
