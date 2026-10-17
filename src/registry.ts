@@ -142,6 +142,33 @@ export async function readActivePlan(userId: string): Promise<string | null> {
 }
 
 /**
+ * The entitlements the billing webhook stashed on a user from their Stripe plan
+ * + subscription metadata (`users.data.planEntitlements`), or `null` when none.
+ * This is the metadata-driven path: `emdash-better-auth`'s stripe webhook parses
+ * the Stripe metadata once and writes the resolved caps here, so we read them
+ * with no Stripe call. Only the keys we enforce are picked out. Never throws.
+ */
+export async function readUserEntitlements(userId: string): Promise<Limits | null> {
+	try {
+		const db = controlDb();
+		const r = await runAsSite(scopeState().primary, () =>
+			sql<{ data: string | null }>`SELECT data FROM users WHERE id = ${userId}`.execute(db),
+		);
+		const dataJson = r.rows[0]?.data;
+		if (!dataJson) return null;
+		const ent = (JSON.parse(dataJson) as { planEntitlements?: unknown }).planEntitlements;
+		if (!ent || typeof ent !== "object") return null;
+		const e = ent as Record<string, unknown>;
+		const out: Limits = {};
+		if (typeof e.sitesPerUser === "number") out.sitesPerUser = e.sitesPerUser;
+		if (typeof e.mediaBytesPerSite === "number") out.mediaBytesPerSite = e.mediaBytesPerSite;
+		return Object.keys(out).length > 0 ? out : null;
+	} catch {
+		return null;
+	}
+}
+
+/**
  * Is Stripe billing turned on for the platform? Reads the control-plane
  * `emdash-better-auth` setting. Only when this is true does the Better Auth UI
  * expose `/account/billing`, so the console gates its "Upgrade" link on it (the
@@ -168,8 +195,17 @@ export async function billingEnabled(): Promise<boolean> {
  * `effectiveLimits(sites.limits)`.
  */
 export async function resolveLimits(userId: string, configured: Limits | undefined): Promise<Limits> {
-	const plan = await readActivePlan(userId);
-	return limitsForPlan(configured, planLimits(plan));
+	// Precedence: metadata-driven entitlements (from the Stripe webhook, cover
+	// per-plan AND per-customer overrides) > built-in plan map (fallback when no
+	// metadata is set) > configured/default > free. The webhook has already
+	// merged price + subscription metadata, so a non-null result here is the
+	// authoritative per-user cap.
+	const [plan, entitlements] = await Promise.all([
+		readActivePlan(userId),
+		readUserEntitlements(userId),
+	]);
+	const planPart = entitlements ?? planLimits(plan);
+	return limitsForPlan(configured, planPart);
 }
 
 /** Does this site already have its tables? (A site that predates status rows has them but no status.) */
