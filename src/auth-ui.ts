@@ -315,15 +315,33 @@ function SiteCard(props: { s: MySite; me: Me; look?: Look; reload: () => void; o
 						} }, "Delete") : null)));
 }
 
+/** The control-plane (app) origin, for a tenant that must send the user "home" to manage sites. */
+function appOrigin(): string {
+	// The host injects it on the auth pages (Astro.locals.multisite.account is app-relative);
+	// fall back to the registrable apex of the current host (drop the left-most label).
+	try {
+		const inj = (window as unknown as { __MULTISITE_APP_URL__?: string }).__MULTISITE_APP_URL__;
+		if (inj) return inj;
+		const h = window.location.hostname.split(".");
+		return `${window.location.protocol}//${h.length > 2 ? h.slice(1).join(".") : h.join(".")}`;
+	} catch {
+		return "/";
+	}
+}
+
 function SitesTab() {
 	const [me, setMe] = React.useState(null as Me | null);
 	const [looks, setLooks] = React.useState([] as Look[]);
 	const [failed, setFailed] = React.useState(false);
+	// A tenant site has no "my sites" feature — the `/api/multisite/me` route only exists on the
+	// control plane (404 here). Show a link back to the app instead of a broken/empty list.
+	const [tenant, setTenant] = React.useState(false);
 	const [view, setView] = React.useState((qs("new") !== null ? { kind: "new" } : qs("appearance") ? { kind: "look", slug: qs("appearance") } : { kind: "list" }) as { kind: string; slug?: string });
 	const timer = React.useRef(0 as any);
 	const load = React.useCallback(async () => {
 		clearTimeout(timer.current);
 		const r = await api("/api/multisite/me");
+		if (r.status === 404) return setTenant(true);
 		if (!r.ok) return setFailed(true);
 		setMe(r.body);
 		if (r.body.sites.some((s: MySite) => s.status === "provisioning")) timer.current = setTimeout(load, 3000);
@@ -333,6 +351,11 @@ function SitesTab() {
 		api("/api/multisite/themes").then((r) => r.ok && setLooks(r.body.themes ?? []));
 		return () => clearTimeout(timer.current);
 	}, [load]);
+	if (tenant)
+		return h(Card, null, h(Card.Content, { style: { display: "grid", gap: 8, justifyItems: "start" } },
+			h("h3", { style: { margin: 0 } }, "Manage your sites from your dashboard"),
+			h("p", { style: muted }, "This is one of your sites. Your full list of sites, billing and new-site creation live in your hosting dashboard."),
+			h("a", { href: `${appOrigin()}/account/sites`, className: linkBtn("primary") }, "Go to my dashboard")));
 	if (failed) return h("p", { role: "alert" }, "Could not load your sites. Please reload the page.");
 	if (!me) return h(SitesSkeleton);
 	const back = () => { clean(); setView({ kind: "list" }); load(); };
