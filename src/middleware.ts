@@ -211,7 +211,7 @@ async function themedNext(ctx: Ctx, sites: SitesConfig, site: string, next: Next
 	if (isThemeRouteRequest(pathname)) return new Response("Not found", { status: 404 });
 	if ((ctx.request.method !== "GET" && ctx.request.method !== "HEAD") || !isThemed(pathname)) return next();
 	await warm();
-	const theme = effectiveTheme(await readSiteTheme(site), sites.themes, sites.defaultTheme);
+	const theme = effectiveTheme(await readSiteTheme(site, ctx.request.headers.has(EDGE_REQUEST_HEADER)), sites.themes, sites.defaultTheme);
 	if (sites.authLinks && opts.authLinks !== false) {
 		// The control plane is always open for sign-up; a customer site follows its own setting.
 		const primary = site === sites.primary;
@@ -271,6 +271,8 @@ export async function onRequest(context: Ctx, next: Next): Promise<Response> {
 }
 
 async function handle(context: Ctx, next: Next): Promise<Response> {
+	// Renders that fill the edge cache must not trust per-isolate memos of site existence / state / theme (see registry.ts).
+	const fresh = context.request.headers.has(EDGE_REQUEST_HEADER);
 	const sites = sitesConfig();
 	if (!sites) return next();
 	const state = scopeState();
@@ -281,8 +283,8 @@ async function handle(context: Ctx, next: Next): Promise<Response> {
 		if (site !== sites.primary) {
 			await warm();
 			// Never start the runtime of a site that does not exist: it would create the site's tables.
-			if (!(await siteExists(site))) return html("<!doctype html><meta charset=utf-8><title>Not found</title><h1>Not found</h1>", 404);
-			const blocked = await readSiteState(site);
+			if (!(await siteExists(site, fresh))) return html("<!doctype html><meta charset=utf-8><title>Not found</title><h1>Not found</h1>", 404);
+			const blocked = await readSiteState(site, fresh);
 			if (blocked) return unavailable(blocked);
 			if (isTemplateId(site)) return serveDemo(context, sites, site, next);
 			if (context.request.method === "GET" && context.url.pathname === HANDOFF_PATH) return acceptHandoff(context, site);

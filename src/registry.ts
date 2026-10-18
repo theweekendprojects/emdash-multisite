@@ -228,15 +228,21 @@ const UNKNOWN_TTL_MS = 10_000;
  * per name per 10 s, not one per request).
  * ponytail: the memo holds at most 2000 names, then starts over. Upgrade path: a Cloudflare rate limit on unknown hosts.
  */
+/**
+ * `fresh` (the three lookups below take it) skips the per-isolate memo. The edge cache passes it for renders that FILL the cache:
+ * after a delete/suspend/theme switch the cache is purged, and a stale memo in another isolate would otherwise re-render the old
+ * site and store it again right after the purge (seen live 2026-10-18). Cache hits never reach this code, so it only costs a few
+ * small reads per cache miss.
+ */
 /** Forget what we know about a site (this isolate only), e.g. right after its purge. */
 export function forgetKnownSite(slug: string): void {
 	(globalThis as Record<symbol, Map<string, unknown> | undefined>)[KNOWN]?.delete(slug);
 }
-export async function siteExists(slug: string): Promise<boolean> {
+export async function siteExists(slug: string, fresh = false): Promise<boolean> {
 	const g = globalThis as Record<symbol, Map<string, { ok: boolean; expires: number }> | undefined>;
 	const memo = (g[KNOWN] ??= new Map());
 	const hit = memo.get(slug);
-	if (hit && hit.expires > Date.now()) return hit.ok;
+	if (!fresh && hit && hit.expires > Date.now()) return hit.ok;
 	const ok = await siteHasTables(slug);
 	if (memo.size > 2000) memo.clear();
 	memo.set(slug, { ok, expires: Date.now() + (ok ? KNOWN_TTL_MS : UNKNOWN_TTL_MS) });
@@ -274,10 +280,10 @@ export function forgetSiteTheme(site: string): void {
 	themeMemo().delete(site);
 }
 
-export async function readSiteTheme(site: string): Promise<string | null> {
+export async function readSiteTheme(site: string, fresh = false): Promise<string | null> {
 	const memo = themeMemo();
 	const hit = memo.get(site);
-	if (hit && hit.expires > Date.now()) return hit.theme;
+	if (!fresh && hit && hit.expires > Date.now()) return hit.theme;
 	try {
 		const db = controlDb();
 		const r = await runAsSite(site, () =>
@@ -365,10 +371,10 @@ const stateMemo = (): StateMemo => ((globalThis as Record<symbol, unknown>)[STAT
  * isolate; a change made in this isolate takes effect immediately. On a read
  * failure it returns null (serve the site) and does not cache the miss.
  */
-export async function readSiteState(site: string): Promise<SiteState | null> {
+export async function readSiteState(site: string, fresh = false): Promise<SiteState | null> {
 	const memo = stateMemo();
 	const hit = memo.get(site);
-	if (hit && hit.expires > Date.now()) return hit.value;
+	if (!fresh && hit && hit.expires > Date.now()) return hit.value;
 	try {
 		const db = controlDb();
 		const r = await runAsSite(scopeState().primary, () =>
