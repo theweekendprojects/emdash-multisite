@@ -11,6 +11,7 @@
  * and any admins they appoint, and nobody else.
  */
 import { definePlugin } from "emdash";
+import { purgeSiteCache } from "./edge-cache.ts";
 import { appearanceState } from "./console.ts";
 import { sitesConfig } from "./config.ts";
 import { PLUGIN_ID, PLUGIN_PAGE_PATH, PLUGIN_VERSION } from "./plugin.ts";
@@ -92,6 +93,19 @@ export function createPlugin() {
 	return definePlugin({
 		id: PLUGIN_ID,
 		version: PLUGIN_VERSION,
+		capabilities: ["read:content"],
+		// Publishing, unpublishing, deleting or saving a PUBLISHED entry drops this site's cached pages so edits show at once.
+		// Draft autosaves do not purge. ponytail: menus, widgets and site settings have no hook yet, so they show after the 5 min TTL.
+		hooks: {
+			"content:afterPublish": { handler: async () => void (await purgeSiteCache(activeSite())) },
+			"content:afterUnpublish": { handler: async () => void (await purgeSiteCache(activeSite())) },
+			"content:afterDelete": { handler: async () => void (await purgeSiteCache(activeSite())) },
+			"content:afterSave": {
+				handler: async (event: { content?: Record<string, unknown> }) => {
+					if (event.content?.status !== "draft") await purgeSiteCache(activeSite());
+				},
+			},
+		},
 		admin: { pages: [{ path: PLUGIN_PAGE_PATH, label: "Site", icon: "globe" }] },
 		routes: {
 			admin: {

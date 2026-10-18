@@ -1,5 +1,6 @@
 import { after } from "emdash";
 import { runAsSite } from "./dialect.ts";
+import { EDGE_REQUEST_HEADER, purgeSiteCache, tagSite } from "./edge-cache.ts";
 import { appearanceState, canManage, checkAddress, consoleState } from "./console.ts";
 import { consolePageHtml } from "./console-page.ts";
 import { isStaff, listSites } from "./fleet.ts";
@@ -120,6 +121,7 @@ async function createOrRejectSite(sites: SitesConfig, org: NonNullable<ReturnTyp
 	if (lostLimitRace(org.slug, await readOrgs(), new Set([...states].filter(([, v]) => v.state === "deleted").map(([k]) => k)), raceLimits)) {
 		log("create.race_lost", { site: org.slug, user: org.ownerUserId });
 		await writeSiteState(org.slug, { state: "deleted", at: new Date().toISOString(), reason: "over the site limit (parallel requests)" });
+		await purgeSiteCache(org.slug);
 		return;
 	}
 	await createSiteForOrg(org, planFor(sites, { theme: org.theme }));
@@ -260,7 +262,15 @@ async function acceptHandoff(ctx: Ctx, site: string): Promise<Response> {
 	return redirectTo(safeNext(ctx.url.searchParams.get("next")));
 }
 
+/** Entry point. Labels successful GETs with their site when the cached entrypoint asked for it (see edge-cache.ts). */
 export async function onRequest(context: Ctx, next: Next): Promise<Response> {
+	const response = await handle(context, next);
+	if (!context.request.headers.has(EDGE_REQUEST_HEADER)) return response;
+	const sites = sitesConfig();
+	return sites ? tagSite(response, context.request.method, resolveSite(context.url.hostname, sites)) : response;
+}
+
+async function handle(context: Ctx, next: Next): Promise<Response> {
 	const sites = sitesConfig();
 	if (!sites) return next();
 	const state = scopeState();
@@ -310,6 +320,8 @@ export async function onRequest(context: Ctx, next: Next): Promise<Response> {
 			const result = transition(await readSiteState(slug), action, { staff, owner });
 			if (!result.ok) return json({ code: result.code }, result.status);
 			await writeSiteState(slug, result.next ? { state: result.next, at: new Date().toISOString(), reason: `${action} by ${userId}` } : null);
+			// the site's cached pages must go offline / change NOW, not at the TTL
+			await purgeSiteCache(slug);
 			return json({ state: result.next ?? "active" }, 200);
 		}
 
@@ -377,6 +389,7 @@ export async function onRequest(context: Ctx, next: Next): Promise<Response> {
 				after(async () => {
 					try {
 						await runAsSite(site, () => switchTheme(sites, slug, theme, { includeContent }));
+					await purgeSiteCache(slug);
 					} catch (error) {
 						console.error(`[multisite] switching "${slug}" to "${theme}" failed:`, error);
 					}

@@ -21,7 +21,8 @@
     "./auth-ui": "./src/auth-ui.ts",
     "./auth-links": "./src/auth-links.ts",
     "./plugin-entry": "./src/plugin-entry.ts",
-    "./plugin": "./src/plugin.ts"
+    "./plugin": "./src/plugin.ts",
+    "./edge-cache": "./src/edge-cache.ts"
   },
   "scripts": {
     "selfcheck": "node --no-warnings scripts/selfcheck.ts",

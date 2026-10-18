@@ -9,6 +9,7 @@ import { runAsSite } from "./dialect.ts";
 import type { FleetAction } from "./fleet-blocks.ts";
 import { reconcile } from "./orgs.ts";
 import { purgeSite } from "./purge.ts";
+import { purgeSiteCache } from "./edge-cache.ts";
 import { readSiteState, writeSiteState } from "./registry.ts";
 import { transition, type StateAction } from "./rules.ts";
 import { scopeState } from "./scope.ts";
@@ -23,6 +24,7 @@ export async function runFleetAction(sites: SitesConfig, slug: string, action: F
 		const result = transition(await readSiteState(slug), action as StateAction, { staff: true, owner: false });
 		if (!result.ok) return { ok: false, message: `Cannot ${action} "${slug}" in its current state.` };
 		await writeSiteState(slug, result.next ? { state: result.next, at: new Date().toISOString(), reason: `${action} from the fleet page` } : null);
+		await purgeSiteCache(slug);
 		return { ok: true, message: `${slug}: ${action} done.` };
 	}
 	if (action === "backup") {
