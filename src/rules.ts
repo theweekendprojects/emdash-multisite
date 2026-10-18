@@ -366,7 +366,7 @@ export const THEME_ROUTE_PREFIX = "/theme-routes";
 
 /** Paths owned by EmDash, Better Auth, the console or the platform: never themed. */
 const NOT_THEMED =
-	/^\/(?:_emdash|_astro|_image|api|auth|login|signup|account|organization|admin|audit-log|sites|\.well-known|theme-routes)(?:\/|$)|^\/(?:sitemap(?:-[^/]+)?\.xml|robots\.txt|llms\.txt)$/;
+	/^\/(?:_emdash|_astro|_image|api|auth|login|signup|account|organization|admin|audit-log|sites|\.well-known|theme-routes)(?:\/|$)|^\/(?:sitemap(?:-[^/]+)?\.xml|robots\.txt)$/;
 
 /** Is this a public page path that the site's theme renders? */
 export function isThemed(pathname: string): boolean {
