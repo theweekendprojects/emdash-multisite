@@ -47,6 +47,9 @@ export async function writeStatus(slug: string, s: SiteStatus): Promise<void> {
 }
 
 const BA_SETTINGS = "plugin:better-auth-settings:settings:";
+// SMTP provider config + state (settings:global, settings:provider:*, state:selectedProviderId). Inherited so every tenant
+// sends mail through the platform's email provider out of the box.
+const SMTP_SETTINGS = "plugin:emdash-smtp:";
 /** Settings not inherited by customer sites: they decide for themselves. */
 const NOT_INHERITED = new Set([`${BA_SETTINGS}orgEnabled`, `${BA_SETTINGS}teamsEnabled`, `${BA_SETTINGS}signUpEnabled`]);
 
@@ -181,8 +184,12 @@ export async function createSiteForOrg(
 			const s = await sql<Record<string, unknown>>`
 				SELECT * FROM _plugin_storage
 				WHERE collection IN ('accounts', 'usernames') AND data LIKE ${`%"userId":"${org.ownerUserId}"%`}`.execute(db);
+			// Better Auth policy + the SMTP provider config (stored in `options` under plugin:emdash-smtp:). Copying the SMTP
+			// settings/state gives every tenant the platform's own email provider (Resend) so plugins and auth can send mail
+			// without the owner configuring anything. SECURITY: the Resend API key is a secret and becomes readable in the
+			// tenant's own SMTP admin — acceptable here because every tenant shares one platform key (rotate platform-wide).
 			const o = await sql<{ name: string; value: string }>`
-				SELECT name, value FROM options WHERE name LIKE ${`${BA_SETTINGS}%`}`.execute(db);
+				SELECT name, value FROM options WHERE name LIKE ${`${BA_SETTINGS}%`} OR name LIKE ${`${SMTP_SETTINGS}%`}`.execute(db);
 			return { owner: u.rows[0], storage: s.rows, inherited: o.rows.filter((r) => !NOT_INHERITED.has(r.name)) };
 		});
 		if (!owner) throw new Error(`owner ${org.ownerUserId} not found on the control plane`);
