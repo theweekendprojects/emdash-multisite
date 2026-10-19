@@ -1,6 +1,6 @@
 import { after } from "emdash";
 import { runAsSite } from "./dialect.ts";
-import { EDGE_REQUEST_HEADER, purgeSiteCache, tagSite } from "./edge-cache.ts";
+import { EDGE_REQUEST_HEADER, classifyEdit, purgeSiteCache, tagSite, touchesPublicPage } from "./edge-cache.ts";
 import { appearanceState, canManage, checkAddress, consoleState } from "./console.ts";
 import { consolePageHtml } from "./console-page.ts";
 import { isStaff, listSites } from "./fleet.ts";
@@ -45,7 +45,7 @@ import { sql } from "kysely";
 import { getDb } from "emdash/runtime";
 import { effectiveLimits, TEMPLATE_PREFIX, demoBannerHtml, demoGuard, isTemplateId, lostLimitRace, SIGNUP_PATH, emailDomainBlocked, DEFAULT_DELETE_GRACE_DAYS, DEFAULT_LIMITS, DEFAULT_POST_LOGIN_PATH, csrfOk, isPurgeDue, loginEntryRedirect, transition, type SiteState, type StateAction, createProblem, needsReconcile, effectiveTheme, isThemeRouteRequest, isThemed, themeFromMetadata, themeProblem, themeRoute } from "./rules.ts";
 import { isSiteId } from "./rewrite.ts";
-import { scopeState } from "./scope.ts";
+import { forgetSiteSettings, scopeState } from "./scope.ts";
 import { resolveSite, type SitesConfig } from "./sites.ts";
 
 /**
@@ -262,12 +262,26 @@ async function acceptHandoff(ctx: Ctx, site: string): Promise<Response> {
 	return redirectTo(safeNext(ctx.url.searchParams.get("next")));
 }
 
-/** Entry point. Labels successful GETs with their site when the cached entrypoint asked for it (see edge-cache.ts). */
+/**
+ * Entry point. Labels successful GETs with their site when the cached entrypoint asked for it (see edge-cache.ts), and purges
+ * the site's cached pages after an admin write that changes a public page but has no plugin hook (menus, settings, ...).
+ */
 export async function onRequest(context: Ctx, next: Next): Promise<Response> {
+	const { method } = context.request;
+	const edit = classifyEdit(method, context.url.pathname);
+	// The body can be read only once: peek at a clone before the route consumes it. Only content saves need it.
+	const body = edit && edit !== "always" ? await context.request.clone().json().catch(() => null) : null;
 	const response = await handle(context, next);
+	if (edit && response.status >= 200 && response.status < 300 && touchesPublicPage(edit, body)) {
+		const sites = sitesConfig();
+		if (sites) {
+			const site = resolveSite(context.url.hostname, sites);
+			after(async () => void (await purgeSiteCache(site)));
+		}
+	}
 	if (!context.request.headers.has(EDGE_REQUEST_HEADER)) return response;
 	const sites = sitesConfig();
-	return sites ? tagSite(response, context.request.method, resolveSite(context.url.hostname, sites)) : response;
+	return sites ? tagSite(response, method, resolveSite(context.url.hostname, sites)) : response;
 }
 
 async function handle(context: Ctx, next: Next): Promise<Response> {
@@ -280,6 +294,7 @@ async function handle(context: Ctx, next: Next): Promise<Response> {
 	const site = resolveSite(context.url.hostname, sites);
 
 	return runAsSite(site, async () => {
+		if (fresh) forgetSiteSettings();
 		if (site !== sites.primary) {
 			await warm();
 			// Never start the runtime of a site that does not exist: it would create the site's tables.

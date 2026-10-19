@@ -94,17 +94,22 @@ export function createPlugin() {
 		id: PLUGIN_ID,
 		version: PLUGIN_VERSION,
 		capabilities: ["read:content"],
-		// Publishing, unpublishing, deleting or saving a PUBLISHED entry drops this site's cached pages so edits show at once.
-		// Draft autosaves do not purge. ponytail: menus, widgets and site settings have no hook yet, so they show after the 5 min TTL.
+		// Anything that changes a public page drops this site's cached pages (purge by `site:<slug>`, see edge-cache.ts).
+		// Draft autosaves of a published entry only stage a draft revision (`draftRevisionId` set), so they must NOT purge: the
+		// purge budget is tiny and shared by every tenant. Edits to menus, widgets, settings, taxonomies and so on have no hook;
+		// the middleware purges those after the successful admin write (see watchEdits in middleware.ts).
 		hooks: {
 			"content:afterPublish": { handler: async () => void (await purgeSiteCache(activeSite())) },
 			"content:afterUnpublish": { handler: async () => void (await purgeSiteCache(activeSite())) },
 			"content:afterDelete": { handler: async () => void (await purgeSiteCache(activeSite())) },
 			"content:afterSave": {
 				handler: async (event: { content?: Record<string, unknown> }) => {
-					if (event.content?.status !== "draft") await purgeSiteCache(activeSite());
+					// Collections without revisions write the live row directly.
+					if (event.content?.status === "published" && !event.content.draftRevisionId) await purgeSiteCache(activeSite());
 				},
 			},
+			"byline:afterSave": { handler: async () => void (await purgeSiteCache(activeSite())) },
+			"byline:afterDelete": { handler: async () => void (await purgeSiteCache(activeSite())) },
 		},
 		admin: { pages: [{ path: PLUGIN_PAGE_PATH, label: "Site", icon: "globe" }] },
 		routes: {

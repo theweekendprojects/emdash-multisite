@@ -81,10 +81,10 @@ check("no themes configured -> bundled seed", effectiveTheme("blog", undefined),
 check("theme parsed from created org", parseCreatedOrg({ ...response, metadata: { theme: "blog" } })?.theme, "blog");
 
 // ---- theme routing ----
-for (const p of ["/", "/posts", "/posts/hello", "/pricing", "/rss.xml", "/contact", "/about", "/work/x", "/search", "/some-page", "/sitemapper", "/administrator"]) {
+for (const p of ["/", "/posts", "/posts/hello", "/pricing", "/rss.xml", "/llms.txt", "/contact", "/about", "/work/x", "/search", "/some-page", "/sitemapper", "/administrator"]) {
 	check(`public path is themed: ${p}`, isThemed(p), true);
 }
-for (const p of ["/_emdash/admin", "/_astro/x.js", "/_image", "/api/auth/get-session", "/auth/sign-in", "/login", "/signup", "/account", "/account/settings", "/organization", "/admin/fleet", "/audit-log", "/sites", "/sites/new", "/.well-known/x", "/sitemap.xml", "/sitemap-posts.xml", "/robots.txt", "/llms.txt", "/theme-routes/blog"]) {
+for (const p of ["/_emdash/admin", "/_astro/x.js", "/_image", "/api/auth/get-session", "/auth/sign-in", "/login", "/signup", "/account", "/account/settings", "/organization", "/admin/fleet", "/audit-log", "/sites", "/sites/new", "/.well-known/x", "/sitemap.xml", "/sitemap-posts.xml", "/robots.txt", "/theme-routes/blog"]) {
 	check(`platform path is not themed: ${p}`, isThemed(p), false);
 }
 check("route for root has no trailing slash", themeRoute("blog", "/"), "/theme-routes/blog");

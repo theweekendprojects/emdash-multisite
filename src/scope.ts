@@ -47,6 +47,35 @@ export function activeSite(): string {
 	return (db && st.siteOfDb.get(db)) ?? currentSite() ?? st.primary;
 }
 
+interface SettingsMemo {
+	version: number;
+	hasValue: boolean;
+	value: unknown;
+	valueVersion: number;
+	lock: { ownerStartedAt: unknown };
+}
+const lastForget = new Map<string, number>();
+/**
+ * Drop the active site's memo of its site settings (title, tagline, logo, SEO defaults). Core keeps that memo for the whole
+ * isolate lifetime with no TTL, and only the isolate that handled a settings write drops its copy. A render that fills the edge
+ * cache right after a purge would otherwise store the OLD title for the whole cache TTL. Same steps as core's
+ * `invalidateSingleFlightCache`. At most once per 2 s per site, so a burst of fills after a purge shares one re-read (the
+ * trailing purge covers an edit that lands inside that window).
+ */
+export function forgetSiteSettings(now = Date.now()): void {
+	const site = activeSite();
+	if (now - (lastForget.get(site) ?? 0) < 2000) return;
+	if (lastForget.size > 2000) lastForget.clear();
+	lastForget.set(site, now);
+	const memo = scopeState().holders.get("emdash:site-settings") as SettingsMemo | undefined;
+	if (!memo) return;
+	memo.version++;
+	memo.hasValue = false;
+	memo.value = null;
+	memo.valueVersion = -1;
+	memo.lock.ownerStartedAt = null;
+}
+
 export function siteScoped<T extends object>(key: string, init: () => T): T {
 	const st = scopeState();
 	const existing = st.holders.get(key);
