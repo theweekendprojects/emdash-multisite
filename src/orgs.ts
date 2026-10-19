@@ -15,7 +15,7 @@ import { userSeed } from "virtual:emdash/seed";
 import { runAsSite } from "./dialect.ts";
 import { isSiteId } from "./rewrite.ts";
 import { BUNDLED_THEME, DEFAULT_CONCURRENT_PROVISIONS, SLOT_WAIT_MS, STALE_PROVISIONING_MS, templateId, effectiveTheme, needsReconcile, themeFromMetadata, type ProvisionStep, type SiteStatus } from "./rules.ts";
-import type { SitesConfig } from "./sites.ts";
+import { siteUrl, type SitesConfig } from "./sites.ts";
 import { controlDb, forgetSiteTheme, readAllStates, readOrgs, readSiteTheme, siteHasTables } from "./registry.ts";
 import { scopeState } from "./scope.ts";
 import { provisionWith } from "./provision.ts";
@@ -212,6 +212,17 @@ export async function createSiteForOrg(
 				ON CONFLICT(name) DO UPDATE SET value = excluded.value`.execute(db);
 			await sql`INSERT INTO options (name, value) VALUES ('site:title', ${JSON.stringify(org.name)})
 				ON CONFLICT(name) DO UPDATE SET value = excluded.value`.execute(db);
+			// EmDash's runtime (and so every plugin's `ctx.site.name`) reads `emdash:site_title`, which only first-run setup writes;
+			// `site:title` is the user-facing alias. Keep both so plugins see the site's name.
+			await sql`INSERT INTO options (name, value) VALUES ('emdash:site_title', ${JSON.stringify(org.name)})
+				ON CONFLICT(name) DO UPDATE SET value = excluded.value`.execute(db);
+			// The site's own public origin. EmDash plugins build absolute URLs from it (the SEO plugin's llms.txt, sitemaps, canonical
+			// links); a cloned tenant never ran first-run setup, so without this they have no origin and emit nothing.
+			const origin = siteUrl(org.slug, sitesConfig() ?? ({} as SitesConfig));
+			if (origin) {
+				await sql`INSERT INTO options (name, value) VALUES ('site:url', ${JSON.stringify(origin)})
+					ON CONFLICT(name) DO UPDATE SET value = excluded.value`.execute(db);
+			}
 			// The site is born with an admin (the owner, above), so EmDash's
 			// first-run setup wizard must never run on it. Without this flag the
 			// wizard appears and then refuses ("admin user already exists").
