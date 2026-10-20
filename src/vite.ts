@@ -18,9 +18,11 @@ import { fileURLToPath } from "node:url";
 
 /** Caches declared as `const x = g[KEY] ?? (() => {...create + store...})()`. */
 export const HOLDER_KEYS = [
-	"emdash:site-settings",
-	"emdash:collection-slugs",
-	"emdash:taxonomy-defs",
+	// emdash 1.3.x versioned/renamed these per-site holders (was site-settings,
+	// collection-slugs, taxonomy-defs). The @N suffix is core's cache-key version.
+	"emdash:site-settings:swr",
+	"emdash:collection-slugs@2",
+	"emdash:taxonomy-defs@2",
 	"emdash:taxonomy-names",
 	"emdash:byline-field-defs",
 	"emdash:url-pattern-cache",

@@ -47,12 +47,25 @@ export function activeSite(): string {
 	return (db && st.siteOfDb.get(db)) ?? currentSite() ?? st.primary;
 }
 
-interface SettingsMemo {
+/** The nested single-flight cache (its own fields; 1.2.x this WAS the whole memo). */
+interface SingleFlight {
 	version: number;
 	hasValue: boolean;
 	value: unknown;
 	valueVersion: number;
 	lock: { ownerStartedAt: unknown };
+}
+/**
+ * emdash 1.3.x wraps the single-flight cache in a stale-while-revalidate holder:
+ * `{ snapshot, expiresAt, generation, revalidatingUntil, refresh: SingleFlight }`.
+ * Fields optional so this also covers the 1.2.x bare-SingleFlight shape.
+ */
+interface SettingsMemo extends Partial<SingleFlight> {
+	snapshot?: unknown;
+	expiresAt?: number;
+	generation?: number;
+	revalidatingUntil?: number;
+	refresh?: SingleFlight;
 }
 const lastForget = new Map<string, number>();
 /**
@@ -67,13 +80,23 @@ export function forgetSiteSettings(now = Date.now()): void {
 	if (now - (lastForget.get(site) ?? 0) < 2000) return;
 	if (lastForget.size > 2000) lastForget.clear();
 	lastForget.set(site, now);
-	const memo = scopeState().holders.get("emdash:site-settings") as SettingsMemo | undefined;
+	const memo = scopeState().holders.get("emdash:site-settings:swr") as SettingsMemo | undefined;
 	if (!memo) return;
-	memo.version++;
-	memo.hasValue = false;
-	memo.value = null;
-	memo.valueVersion = -1;
-	memo.lock.ownerStartedAt = null;
+	// 1.3.x stale-while-revalidate wrapper: drop the stored snapshot + force a refresh.
+	if ("snapshot" in memo || "generation" in memo) {
+		memo.snapshot = null;
+		memo.expiresAt = 0;
+		memo.revalidatingUntil = 0;
+		if (typeof memo.generation === "number") memo.generation++;
+	}
+	// The inner single-flight cache: nested under `.refresh` in 1.3.x, the memo
+	// itself in 1.2.x. Clear whichever carries the single-flight fields.
+	const sf: Partial<SingleFlight> = memo.refresh ?? memo;
+	if (typeof sf.version === "number") sf.version++;
+	sf.hasValue = false;
+	sf.value = null;
+	sf.valueVersion = -1;
+	if (sf.lock) sf.lock.ownerStartedAt = null;
 }
 
 export function siteScoped<T extends object>(key: string, init: () => T): T {
