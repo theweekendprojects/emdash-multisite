@@ -250,7 +250,7 @@ export async function createSiteForOrg(
 			const warmOrigin = siteUrl(org.slug, sitesConfig() ?? ({} as SitesConfig));
 			if (warmOrigin) {
 				await Promise.allSettled(
-					["/", "/robots.txt", "/llms.txt", "/sitemap-index.xml"].map((p) =>
+					["/", "/robots.txt", "/llms.txt", "/sitemap.xml"].map((p) =>
 						fetch(new URL(p, warmOrigin), { headers: { "user-agent": "hostmyemdash-prewarm" } }),
 					),
 				).catch(() => {});
