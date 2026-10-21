@@ -240,6 +240,22 @@ export async function createSiteForOrg(
 		await done("identity");
 		await writeStatus(org.slug, { status: "ready", startedAt, readyAt: new Date().toISOString(), timings });
 		log("site.ready", { site: org.slug, theme: plan.theme, cloned, ms: Date.now() - Date.parse(startedAt), timings });
+		// Pre-warm the new site's cold public routes so the FIRST real visitor (or a PageSpeed/agent
+		// crawler) hits a warm edge cache instead of the ~450ms cold render. The SEO plugin generates
+		// robots.txt / llms.txt / sitemap live on a cold isolate; that cold render exceeded Lighthouse's
+		// tight fetch budget on a brand-new site, flagging robots.txt/llms.txt as "failed to fetch"
+		// (SEO 92, Agentic 2/3). One request per route fills the host-keyed edge cache. Best-effort and
+		// non-blocking: the site is already "ready"; failures are ignored.
+		{
+			const warmOrigin = siteUrl(org.slug, sitesConfig() ?? ({} as SitesConfig));
+			if (warmOrigin) {
+				await Promise.allSettled(
+					["/", "/robots.txt", "/llms.txt", "/sitemap-index.xml"].map((p) =>
+						fetch(new URL(p, warmOrigin), { headers: { "user-agent": "hostmyemdash-prewarm" } }),
+					),
+				).catch(() => {});
+			}
+		}
 	} catch (error) {
 		console.error(`[multisite] provisioning "${org.slug}" failed:`, error);
 		log("site.failed", { site: org.slug, error: error instanceof Error ? error.message : String(error) });
