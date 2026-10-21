@@ -32,7 +32,7 @@ import {
 	warm,
 	writeSiteState,
 } from "./registry.ts";
-import { overLimit, verifyTurnstile } from "./abuse.ts";
+import { overLimit } from "./abuse.ts";
 import { demoUrls } from "./demo.ts";
 import { log } from "./log.ts";
 import { PASSWORD_PATHS, syncRecentPasswords } from "./passwords.ts";
@@ -131,9 +131,15 @@ const tooMany = () =>
 		status: 429,
 		headers: { "content-type": "application/json", "cache-control": "no-store", "retry-after": "60" },
 	});
-/** Sign-up: refuse throwaway-mail domains, brake bursts per client IP, and verify Turnstile. Null = let it through. */
+/** Sign-up: refuse throwaway-mail domains and brake bursts per client IP. Null = let it through.
+ *
+ * Turnstile is NOT verified here. Better Auth's own `captcha` plugin (emdash-better-auth auth.ts)
+ * verifies the `x-captcha-response` header against TURNSTILE_SECRET on the sign-up request. A
+ * Turnstile token is SINGLE-USE, so a second verifier here consumed the token first and made the
+ * plugin's verify fail with VERIFICATION_FAILED (and before that, reading the body — where the
+ * token never is — failed with TURNSTILE_MISSING). One verifier only: Better Auth's captcha plugin. */
 async function guardSignup(ctx: Ctx, sites: SitesConfig): Promise<Response | null> {
-	const body = (await ctx.request.clone().json().catch(() => null)) as { email?: unknown; cfTurnstileResponse?: unknown } | null;
+	const body = (await ctx.request.clone().json().catch(() => null)) as { email?: unknown } | null;
 	if (emailDomainBlocked(body?.email, sites.blockedEmailDomains)) {
 		log("signup.blocked_domain");
 		return json({ code: "EMAIL_DOMAIN_BLOCKED", message: "Please sign up with a permanent email address." }, 400);
@@ -141,21 +147,6 @@ async function guardSignup(ctx: Ctx, sites: SitesConfig): Promise<Response | nul
 	if (await overLimit("SIGNUP_LIMITER", ctx.request.headers.get("cf-connecting-ip") ?? "unknown")) {
 		log("signup.rate_limited");
 		return tooMany();
-	}
-	// OP-13: Turnstile verification on sign-up (skipped when TURNSTILE_SECRET is unset).
-	// The better-auth-ui captcha widget sends the token in the `x-captcha-response` HEADER
-	// (Better Auth captcha-plugin convention), NOT in the JSON body. Read the header first;
-	// keep the body `cfTurnstileResponse` as a fallback for non-UI / programmatic callers.
-	// Reading only the body made every widget sign-up fail with TURNSTILE_MISSING.
-	const clientIp = ctx.request.headers.get("cf-connecting-ip");
-	const headerToken = ctx.request.headers.get("x-captcha-response");
-	const turnstileError = await verifyTurnstile(
-		headerToken ?? (typeof body?.cfTurnstileResponse === "string" ? body.cfTurnstileResponse : undefined),
-		clientIp ?? undefined,
-	);
-	if (turnstileError) {
-		log("signup.turnstile_failed", { ip: clientIp ?? "unknown" });
-		return turnstileError;
 	}
 	return null;
 }
