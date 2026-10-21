@@ -142,10 +142,15 @@ async function guardSignup(ctx: Ctx, sites: SitesConfig): Promise<Response | nul
 		log("signup.rate_limited");
 		return tooMany();
 	}
-	// OP-13: Turnstile verification on sign-up (skipped when TURNSTILE_SECRET is unset)
+	// OP-13: Turnstile verification on sign-up (skipped when TURNSTILE_SECRET is unset).
+	// The better-auth-ui captcha widget sends the token in the `x-captcha-response` HEADER
+	// (Better Auth captcha-plugin convention), NOT in the JSON body. Read the header first;
+	// keep the body `cfTurnstileResponse` as a fallback for non-UI / programmatic callers.
+	// Reading only the body made every widget sign-up fail with TURNSTILE_MISSING.
 	const clientIp = ctx.request.headers.get("cf-connecting-ip");
+	const headerToken = ctx.request.headers.get("x-captcha-response");
 	const turnstileError = await verifyTurnstile(
-		typeof body?.cfTurnstileResponse === "string" ? body.cfTurnstileResponse : undefined,
+		headerToken ?? (typeof body?.cfTurnstileResponse === "string" ? body.cfTurnstileResponse : undefined),
 		clientIp ?? undefined,
 	);
 	if (turnstileError) {
