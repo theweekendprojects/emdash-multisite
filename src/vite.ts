@@ -24,7 +24,14 @@ export const HOLDER_KEYS = [
 	"emdash:collection-slugs@2",
 	"emdash:taxonomy-defs@2",
 	"emdash:taxonomy-names",
+	// emdash 1.4.0 (#4243) added stale-while-revalidate variants of the taxonomy
+	// holders. Same per-site taxonomy data; still holders.
+	"emdash:taxonomy-names:swr",
+	"emdash:taxonomy-defs:swr",
 	"emdash:byline-field-defs",
+	// emdash 1.4.0: memoized resolved menu URLs, keyed by name:locale:trailingSlash.
+	// Per-site content (each tenant's menus differ), so scope it per site.
+	"emdash:menu-resolved-namespaces",
 	"emdash:url-pattern-cache",
 	"emdash:redirect-cache",
 	"emdash:redirect-artifact-repair",
@@ -59,6 +66,7 @@ export const SITE_INDEPENDENT_KEYS: Readonly<Record<string, string>> = {
 	"emdash:content-save-hook-context": "AsyncLocalStorage; per request",
 	"emdash:dev-emails": "dev console store",
 	"emdash:foldedTerms": "per-row marker, not a cache",
+	"emdash:foldedAuthorByline": "per-row marker on the data object (emdash 1.4.0 #4167), not a cache",
 	"emdash:foldedBylines": "per-row marker, not a cache",
 	"emdash:foldedBylinesExist": "per-row marker, not a cache",
 	"emdash:migration-config": "build-time integration metadata",
@@ -115,9 +123,14 @@ function patchHolder(code: string, key: string, id: string): string {
 	const consts = keyConsts(code, key);
 	// dist:  const c = g[KEY] ?? (() => {...})();
 	// src :  const c: Type =\n // comment\n (g[KEY] as Type | undefined) ??\n (() => {...})();
+	// src (1.4.0 globalThis-cast style):
+	//        const c: Type =\n // comment\n ((globalThis as Record<symbol, unknown>)[KEY] as\n | Type\n | undefined) ??\n (() => {...})();
+	// The store accessor is either a bare alias `g[KEY]` or a parenthesized cast
+	// `(globalThis as Record<symbol, unknown>)[KEY]`, and the trailing `as <Type>`
+	// may span multiple lines, so match the accessor and cast newline-tolerantly.
 	for (const k of consts) {
 		const re = new RegExp(
-			`const (\\w+)(?::[^=\\n]+)? =\\s*(?:\\/\\/[^\\n]*\\n\\s*)*\\(?\\w+\\[${k}\\](?: as [^)]+)?\\)? \\?\\?\\s*(\\(\\(\\) => \\{[\\s\\S]*?\\n\\s*\\}\\)\\(\\));`,
+			`const (\\w+)(?::[^=\\n]+)? =\\s*(?:\\/\\/[^\\n]*\\n\\s*)*\\(*\\s*(?:\\(globalThis as [^)]+\\)|\\w+)\\[${k}\\](?:\\s+as\\s[\\s\\S]*?)?\\s*\\)*\\s*\\?\\?\\s*(\\(\\(\\) => \\{[\\s\\S]*?\\n?\\s*\\}\\)\\(\\));`,
 		);
 		if (re.test(code)) {
 			return code.replace(re, (_m, name: string, init: string) =>
