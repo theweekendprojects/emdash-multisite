@@ -1,0 +1,26 @@
+// Merge these keys into your existing wrangler.jsonc.
+// They point the Worker at src/worker.ts and declare the two cache entrypoints
+// the host-aware edge cache needs (see templates/worker.ts and SETUP.md).
+{
+	"main": "./src/worker.ts",
+
+	// Host-aware edge cache. The default (gateway) entrypoint is uncached; the
+	// PublicCache entrypoint is cached, with the request host in ctx.props so the
+	// cache key is per-site. Do NOT enable Workers Cache any other way.
+	"cache": { "enabled": true },
+	"exports": {
+		"default": { "type": "worker", "cache": { "enabled": false } },
+		"PublicCache": { "type": "worker", "cache": { "enabled": true } }
+	}
+
+	// You still need your existing bindings alongside these:
+	//   "d1_databases": [{ "binding": "DB", "database_name": "...", "database_id": "..." }],
+	//   "r2_buckets":   [{ "binding": "MEDIA", "bucket_name": "..." }],
+	//   plus routes / custom_domain, compatibility_date, etc.
+	//
+	// Production subdomains also need, on the Cloudflare side:
+	//   - a custom-domain route for the apex and a route for *.example.com
+	//   - a wildcard DNS record ("*" -> the Worker, proxied)
+	// On workers.dev (no wildcard) map each tenant host in SitesConfig.hosts and
+	// deploy with: wrangler versions upload --preview-alias <name>
+}

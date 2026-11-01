@@ -1,12 +1,44 @@
 {
   "name": "emdash-multisite",
   "version": "0.7.0",
-  "private": true,
-  "description": "PRIVATE. Single-DB multi-site for EmDash: per-site table prefix applied inside the Kysely dialect. Not for publishing.",
-  "license": "UNLICENSED",
+  "description": "Run many EmDash sites from one Cloudflare Worker and one D1 database. Per-site table prefixing in the Kysely dialect, per-site caches via a build-time patch, and hostname-based site resolution. No Workers for Platforms, no fork of EmDash core.",
+  "license": "MIT",
+  "author": "The Weekend Projects",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/theweekendprojects/emdash-multisite.git"
+  },
+  "homepage": "https://github.com/theweekendprojects/emdash-multisite#readme",
+  "bugs": {
+    "url": "https://github.com/theweekendprojects/emdash-multisite/issues"
+  },
+  "keywords": [
+    "emdash",
+    "emdash-cms",
+    "cms",
+    "multi-tenant",
+    "multisite",
+    "multi-site",
+    "cloudflare",
+    "cloudflare-workers",
+    "d1",
+    "astro",
+    "kysely"
+  ],
   "main": "./src/index.ts",
   "types": "./src/index.ts",
+  "bin": {
+    "emdash-multisite": "./bin/setup.mjs"
+  },
+  "files": [
+    "src",
+    "templates",
+    "bin",
+    "README.md",
+    "SETUP.md",
+    "LICENSE"
+  ],
   "exports": {
     ".": "./src/index.ts",
     "./db/d1": "./src/db/d1.ts",

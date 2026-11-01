@@ -1,19 +1,29 @@
 # emdash-multisite
 
-**PRIVATE.** Run many EmDash sites from one codebase, one Cloudflare Worker, and one D1 database —
+Run many EmDash sites from one codebase, one Cloudflare Worker, and one D1 database —
 no Workers for Platforms, no fork of EmDash core. Each site gets its own prefixed tables
 (`ec_posts$acme`); EmDash's in-memory caches are made per-site by a build-time patch; creating a
 Better Auth **organization** provisions a site and its **slug** becomes the subdomain.
 
-> Do not publish to the public npm registry. See [Installing](#installing-private) for private
-> options. Background and full history: `emdash-plan/product/single-db-multisite.md`.
+[![npm](https://img.shields.io/npm/v/emdash-multisite.svg)](https://www.npmjs.com/package/emdash-multisite)
+[![license](https://img.shields.io/npm/l/emdash-multisite.svg)](./LICENSE)
+
+MIT licensed. One command to wire it into an existing EmDash + Cloudflare app:
+
+```bash
+pnpm add emdash-multisite
+npx emdash-multisite setup        # scaffolds the worker + config snippets
+```
+
+Then merge the two printed snippets and deploy. The step-by-step is in
+[SETUP.md](./SETUP.md); the reference and the land mines are below.
 
 ---
 
 ## Table of contents
 - [How it works (30 seconds)](#how-it-works-30-seconds)
 - [Requirements](#requirements)
-- [Installing (private)](#installing-private)
+- [Installing](#installing)
 - [Set up a site (the 3 wires)](#set-up-a-site-the-3-wires)
 - [Config reference](#config-reference)
 - [The control-plane site vs tenant sites](#the-control-plane-site-vs-tenant-sites)
@@ -59,27 +69,31 @@ into slots EmDash already exposes (`database:`, `vite.plugins`, `middleware.oute
 - For the org→site flow: `emdash-better-auth` with the **organization** feature enabled.
 - `pnpm` (the EmDash templates use it).
 
-## Installing (private)
+## Installing
 
-Never `npm publish` to the public registry. Pick one:
+```bash
+pnpm add emdash-multisite      # or: npm i / yarn add
+```
 
-- **Git dependency** (separate site repos):
-  ```jsonc
-  // package.json
-  "emdash-multisite": "github:theweekendprojects/emdash-multisite#<tag-or-commit>"
-  ```
-  Pin a tag/commit so sites don't drift. The build machine needs read access to the private repo.
+Then scaffold the wiring into your app:
 
-- **pnpm workspace** (sites + this package in one repo): add both to `pnpm-workspace.yaml`, then
-  `"emdash-multisite": "workspace:*"`. Best for a monorepo fleet; no version juggling.
+```bash
+npx emdash-multisite setup     # writes src/worker.ts + two merge-snippets, prints next steps
+```
 
-- **GitHub Packages** (private, versioned, feels like npm): publish under
-  `@theweekendprojects/emdash-multisite` with an `.npmrc` scope line pointing at GitHub.
+Prefer to wire it by hand? See [SETUP.md](./SETUP.md).
 
-- **Local `file:`** (dev only, folders side by side): `"emdash-multisite": "file:../emdash-multisite"`.
+Other ways to depend on it (monorepo / pinned source):
+
+- **pnpm workspace** (your sites + this package in one repo): add both to `pnpm-workspace.yaml`,
+  then `"emdash-multisite": "workspace:*"`. Best for a monorepo fleet; local edits are instant,
+  no publish needed for your own use.
+- **Git dependency** (pin to a tag): `"emdash-multisite": "github:theweekendprojects/emdash-multisite#<tag>"`.
+- **Local `file:`** (dev, folders side by side): `"emdash-multisite": "file:../emdash-multisite"`.
 
 This package ships **TypeScript source** (like `emdash-better-auth`); the consuming site's build
-compiles it. There is no `dist`.
+compiles it. There is no `dist` — that is intentional (the cache patch and the wrapper need to run
+through your app's Vite/Astro build).
 
 ## Set up a site (the 3 wires)
 
@@ -431,14 +445,14 @@ link for every theme whose template is complete and has an address (`demoUrl` in
 The strip is fixed to the bottom and the page gets bottom padding so it never covers the footer. It needs `HTMLRewriter` (Workers) and `appUrl`. A template needs `emdash:setup_complete` for its search API;
 `buildTemplate` sets it. Check: `multisite-smoke/scripts/demo-check.mjs`.
 
-## Using the package (private distribution)
-The package is private and not on npm. A host installs it from this repository, pinned by tag:
-`"emdash-multisite": "github:theweekendprojects/emdash-multisite#v0.6.0"` (install verified: npm fetches the tag and
-the sources, which the host's Vite compiles). Releasing is `git tag vX.Y.Z && git push origin vX.Y.Z` after the CI is
-green and `package.json` carries the same version. In CI the host needs read access to this repo: a fine-grained token
-with read-only Contents access, wired in with a `git config url.<token>@github.com/.insteadOf` line.
-`examples/host-deploy.yml` is a ready-to-copy deploy workflow (install, build, `wrangler deploy`). During development
-the host can keep `"emdash-multisite": "file:../emdash-multisite"`.
+## Using the package
+
+The package is on npm: `pnpm add emdash-multisite`. A host pins a version range like any
+dependency (`"emdash-multisite": "^0.7.0"`); npm fetches the sources, which the host's Vite
+compiles (there is no `dist`). Releasing is `npm version <patch|minor|major> && npm publish`
+after CI is green. `examples/host-deploy.yml` is a ready-to-copy Cloudflare deploy workflow
+(install, build, `wrangler deploy`). During development you can also use a pnpm `workspace:*`
+link or `"emdash-multisite": "file:../emdash-multisite"` for instant local edits.
 
 ## Backups and restore (per site)
 D1 Time Travel restores the whole database, so one damaged site needs its own copy. A backup is one JSON file in the
@@ -650,3 +664,19 @@ mechanisms work without it; you'd then provision sites manually via `provisionSi
 
 Internal (not a stable API): `src/orgs.ts`, `src/scope.ts`, `src/dialect.ts`, `src/rewrite.ts`,
 `src/runtime.ts`.
+
+## Contributing
+
+Issues and PRs welcome. The maintainer-facing architecture notes and land mines live in
+[AGENTS.md](./AGENTS.md) — read that before changing the cache patch or the SQL rewriter.
+Run the self-checks before a PR (Node ≥ 22.18):
+
+```bash
+node --no-warnings scripts/orgs.selfcheck.ts                    # slug / org parsing
+node --no-warnings scripts/caches.selfcheck.ts <site>/node_modules   # cache tripwire
+node --no-warnings scripts/selfcheck.ts                         # migrations + repo oracle
+```
+
+## License
+
+[MIT](./LICENSE) © The Weekend Projects

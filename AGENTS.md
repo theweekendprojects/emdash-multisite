@@ -4,8 +4,8 @@ Context for an AI agent (or human) opening this repo cold. Read this fully befor
 anything. The README is the user-facing setup guide; this file is the *why*, the architecture, and
 the land mines, so you don't rediscover them the hard way.
 
-**PRIVATE.** Do not publish to the public npm registry. The whole point is a private trick kept out
-of the open-source `emdash-better-auth`.
+**Open source (MIT), published to npm as `emdash-multisite`.** (It began as a private trick; it is now
+public. If you find older "PRIVATE / do not publish" notes in git history, they are superseded.)
 
 ---
 
