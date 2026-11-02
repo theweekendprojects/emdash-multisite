@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/theweekendprojects/emdash-multisite/security/advisories/new
+    about: Report cross-tenant leaks or other security issues PRIVATELY. Never in a public issue.
+  - name: Question / discussion
+    url: https://github.com/theweekendprojects/emdash-multisite/discussions
+    about: Ask how to wire it up, share a deployment, or discuss an idea before filing a feature request.

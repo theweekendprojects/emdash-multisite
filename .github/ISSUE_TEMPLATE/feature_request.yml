@@ -1,0 +1,28 @@
+name: Feature request
+description: Suggest an improvement or a new capability.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Describe the use case, not just the solution. What are you blocked on today?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: What would you like to happen? A config field, an export, a behaviour change?
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Workarounds you have tried, or other designs you weighed.
+  - type: checkboxes
+    id: isolation
+    attributes:
+      label: Tenant isolation
+      description: Multi-tenancy isolation is the core guarantee of this project.
+      options:
+        - label: I have considered how this affects isolation between sites (data, cache, auth).

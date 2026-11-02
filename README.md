@@ -1,5 +1,9 @@
 # emdash-multisite
 
+**WordPress Multisite for [EmDash](https://github.com/emdash-cms/emdash).** Host a whole fleet
+of CMS sites — a subdomain each, isolated content and users — from one deploy, on Cloudflare's
+free-ish edge.
+
 Run many EmDash sites from one codebase, one Cloudflare Worker, and one D1 database —
 no Workers for Platforms, no fork of EmDash core. Each site gets its own prefixed tables
 (`ec_posts$acme`); EmDash's in-memory caches are made per-site by a build-time patch; creating a
@@ -667,8 +671,14 @@ Internal (not a stable API): `src/orgs.ts`, `src/scope.ts`, `src/dialect.ts`, `s
 
 ## Contributing
 
-Issues and PRs welcome. The maintainer-facing architecture notes and land mines live in
-[AGENTS.md](./AGENTS.md) — read that before changing the cache patch or the SQL rewriter.
+Issues and PRs welcome — bug reports, docs, tests, and code. See
+[CONTRIBUTING.md](./CONTRIBUTING.md) for setup, the self-check suite, and the PR flow, and
+[AGENTS.md](./AGENTS.md) for the architecture and the land mines (read that before changing
+the cache patch or the SQL rewriter).
+
+Please also read the [Code of Conduct](./CODE_OF_CONDUCT.md). For security issues — especially
+cross-tenant leaks — follow [SECURITY.md](./SECURITY.md); do not open a public issue.
+
 Run the self-checks before a PR (Node ≥ 22.18):
 
 ```bash
@@ -676,6 +686,19 @@ node --no-warnings scripts/orgs.selfcheck.ts                    # slug / org par
 node --no-warnings scripts/caches.selfcheck.ts <site>/node_modules   # cache tripwire
 node --no-warnings scripts/selfcheck.ts                         # migrations + repo oracle
 ```
+
+## Community
+
+Building something with emdash-multisite, or want to help shape it? Come say hi.
+
+- **Discussions** — questions, show-and-tell, ideas:
+  [GitHub Discussions](https://github.com/theweekendprojects/emdash-multisite/discussions)
+- **Issues** — bugs and feature requests:
+  [open an issue](https://github.com/theweekendprojects/emdash-multisite/issues/new/choose)
+- **Chat** — Discord invite coming soon.
+
+If you run a fleet in production, a short note in Discussions about your setup (scale, custom
+domains, themes) genuinely helps prioritise the roadmap.
 
 ## License
 

@@ -1,0 +1,57 @@
+name: Bug report
+description: Something is broken or behaves unexpectedly.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. **If this is a security issue — especially a cross-tenant
+        data leak — do not file it here.** Follow [SECURITY.md](../blob/main/SECURITY.md)
+        instead.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect, and what happened instead?
+      placeholder: On a tenant site, X; I expected Y.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Configure withSites({ ... })
+        2. Request https://acme.example.com/...
+        3. See ...
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: emdash-multisite, emdash, and relevant @emdash-cms/* versions, plus Node.
+      placeholder: "emdash-multisite 0.8.0, emdash 1.4.0, @emdash-cms/cloudflare x.y.z, node 22.18"
+    validations:
+      required: true
+  - type: dropdown
+    id: runtime
+    attributes:
+      label: Runtime
+      options:
+        - Cloudflare Workers (D1)
+        - Local dev (Node + SQLite)
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: selfcheck
+    attributes:
+      label: Self-check output (if relevant)
+      description: Output of the relevant scripts/*.selfcheck.ts, especially the cache tripwire after an EmDash upgrade.
+      render: shell
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / errors
+      render: shell
