@@ -1,2 +1,7 @@
 node_modules
 .DS_Store
+
+# Environment / secrets (npm token etc.) — never commit
+.env
+.env.*
+!.env.example
