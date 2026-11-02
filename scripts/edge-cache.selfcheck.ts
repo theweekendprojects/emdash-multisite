@@ -192,7 +192,7 @@ function lab(opts: { accept?: (n: number) => boolean; onWake?: () => void; gate?
 
 // cache-filling renders drop core's per-isolate site-settings memo
 {
-	const memo = siteScoped("emdash:site-settings", () => ({ version: 0, hasValue: true, value: { title: "old" }, valueVersion: 0, lock: { ownerStartedAt: 123 as number | null } }));
+	const memo = siteScoped("emdash:site-settings:swr", () => ({ version: 0, hasValue: true, value: { title: "old" }, valueVersion: 0, lock: { ownerStartedAt: 123 as number | null } }));
 	forgetSiteSettings(10_000);
 	eq("settings memo: dropped", [memo.hasValue, memo.value, memo.version, memo.valueVersion, memo.lock.ownerStartedAt], [false, null, 1, -1, null]);
 	memo.hasValue = true;

@@ -22,10 +22,9 @@ export const HOLDER_KEYS = [
 	// collection-slugs, taxonomy-defs). The @N suffix is core's cache-key version.
 	"emdash:site-settings:swr",
 	"emdash:collection-slugs@2",
-	"emdash:taxonomy-defs@2",
-	"emdash:taxonomy-names",
-	// emdash 1.4.0 (#4243) added stale-while-revalidate variants of the taxonomy
-	// holders. Same per-site taxonomy data; still holders.
+	// emdash 1.4.0 (#4243) replaced the taxonomy holders (`taxonomy-defs@2`,
+	// `taxonomy-names`) with stale-while-revalidate variants. Same per-site taxonomy
+	// data; still holders. The pre-1.4.0 names are gone from core and were removed here.
 	"emdash:taxonomy-names:swr",
 	"emdash:taxonomy-defs:swr",
 	"emdash:byline-field-defs",
