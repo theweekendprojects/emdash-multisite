@@ -1,6 +1,6 @@
 {
   "name": "emdash-multisite",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "Run many EmDash sites from one Cloudflare Worker and one D1 database. Per-site table prefixing in the Kysely dialect, per-site caches via a build-time patch, and hostname-based site resolution. No Workers for Platforms, no fork of EmDash core.",
   "license": "MIT",
   "author": "The Weekend Projects",
