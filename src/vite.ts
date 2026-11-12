@@ -67,6 +67,10 @@ export const SITE_INDEPENDENT_KEYS: Readonly<Record<string, string>> = {
 	"emdash:foldedTerms": "per-row marker, not a cache",
 	"emdash:foldedAuthorByline": "per-row marker on the data object (emdash 1.4.0 #4167), not a cache",
 	"emdash:foldedBylines": "per-row marker, not a cache",
+	// emdash 1.5.0: two more per-row markers set with Object.defineProperty on the
+	// loaded entry object (loader), like foldedBylines. Not process-wide caches.
+	"emdash:entryTitleField": "per-row marker on the data object (emdash 1.5.0), not a cache",
+	"emdash:foldedBylineFieldsVersion": "per-row marker on the data object (emdash 1.5.0), not a cache",
 	"emdash:foldedBylinesExist": "per-row marker, not a cache",
 	"emdash:migration-config": "build-time integration metadata",
 	"emdash:d1-session-guard": "platform health latch",
@@ -78,6 +82,13 @@ export const SITE_INDEPENDENT_KEYS: Readonly<Record<string, string>> = {
 	"emdash.ai-search.config": "build-time plugin config; same for every site",
 	"emdash.registry.publisherHandles": "ATProto handle lookups on the public network; identical for every site",
 	"emdash.registry.authoritativeRecordReader": "test override slot",
+	// emdash 1.5.0: memo of plugin definitions, keyed by a hash of the build-time
+	// plugin config (virtual:emdash/plugins). Same config for every site.
+	"emdash:plugins": "plugin definitions instantiated from build-time config (emdash 1.5.0)",
+	// emdash 1.5.0 admin SPA (@emdash-cms/admin): browser-side state only.
+	"emdash.admin.adminLayoutStores": "admin SPA, browser-side state (emdash 1.5.0)",
+	"emdash.blocks-field.press": "admin SPA, browser-side state (emdash 1.5.0)",
+	"emdash.blocks-field.undo": "admin SPA, browser-side state (emdash 1.5.0)",
 	"emdash.openapi.cachedSpec": "built only from build-time config (maxUploadSize); no site data",
 	"@emdash-cms/cloudflare:astro-app": "the Astro app object; one build serves every site",
 	"@emdash-cms/cloudflare:cache-provider": "platform cache provider; one per Worker",
@@ -92,6 +103,17 @@ export const SITE_INDEPENDENT_KEYS: Readonly<Record<string, string>> = {
 	"emdash:object-cache:last-content-write": "object cache (opt-in, off by default)",
 	"emdash:object-cache:pending-content-write": "object cache (opt-in, off by default)",
 	"emdash:object-cache:write-scope": "object cache (opt-in, off by default)",
+	// emdash 1.5.0 object-cache internals. Same reasoning as above: the object
+	// cache is unsupported on a multi-site deploy (README "Limits & gotchas").
+	"emdash:object-cache:pending-bumps:v2": "object cache (opt-in, off by default)",
+	"emdash:object-cache:invalidation-scope": "object cache (opt-in, off by default)",
+	"emdash:object-cache:change-marker": "object cache (opt-in, off by default)",
+	"emdash:object-cache:marker-write": "object cache (opt-in, off by default)",
+	// emdash 1.5.0 co-editing (#4695): opt-in (`coEditing: true`), off by default; the
+	// room engine needs a Durable Object binding this package does not set up.
+	"emdash:rooms:notifications": "co-editing state (opt-in, off by default)",
+	"emdash:rooms:signals": "co-editing state (opt-in, off by default)",
+	"emdash:rooms:upgrades": "co-editing state (opt-in, off by default)",
 	// ponytail: sandboxed plugins are not supported multi-site in v1 (their bridge opens its own DB).
 	"emdash:sandbox-content-create-callbacks": "sandboxed plugins unsupported in v1",
 	"emdash:sandbox-taxonomy-write-callbacks": "sandboxed plugins unsupported in v1",
