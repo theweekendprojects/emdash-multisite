@@ -10,6 +10,7 @@ import type { FleetAction } from "./fleet-blocks.ts";
 import { reconcile } from "./orgs.ts";
 import { purgeSite } from "./purge.ts";
 import { purgeSiteCache } from "./edge-cache.ts";
+import { t } from "./i18n.ts";
 import { readSiteState, writeSiteState } from "./registry.ts";
 import { transition, type StateAction } from "./rules.ts";
 import { scopeState } from "./scope.ts";
@@ -19,26 +20,26 @@ const STATE_ACTIONS = new Set<FleetAction>(["suspend", "resume", "delete", "rest
 
 export async function runFleetAction(sites: SitesConfig, slug: string, action: FleetAction): Promise<{ ok: boolean; message: string }> {
 	const primary = scopeState().primary;
-	if (slug === primary) return { ok: false, message: "The control plane is not managed here." };
+	if (slug === primary) return { ok: false, message: t("fleet.result.controlPlane") };
 	if (STATE_ACTIONS.has(action)) {
 		const result = transition(await readSiteState(slug), action as StateAction, { staff: true, owner: false });
-		if (!result.ok) return { ok: false, message: `Cannot ${action} "${slug}" in its current state.` };
+		if (!result.ok) return { ok: false, message: t(`fleet.result.refused.${action as StateAction}`, { slug }) };
 		await writeSiteState(slug, result.next ? { state: result.next, at: new Date().toISOString(), reason: `${action} from the fleet page` } : null);
 		await purgeSiteCache(slug);
-		return { ok: true, message: `${slug}: ${action} done.` };
+		return { ok: true, message: t(`fleet.result.done.${action as StateAction}`, { slug }) };
 	}
 	if (action === "backup") {
 		const { bytes } = await runAsSite(primary, () => backupSite(slug));
-		return { ok: true, message: `${slug}: backed up (${Math.round(bytes / 1024)} KB).` };
+		return { ok: true, message: t("fleet.result.backedUp", { slug, kb: Math.round(bytes / 1024) }) };
 	}
 	if (action === "retry") {
 		after(() => runAsSite(primary, () => reconcile(sites, slug)).then(() => undefined));
-		return { ok: true, message: `${slug}: setup restarted. Reload in a minute.` };
+		return { ok: true, message: t("fleet.result.retry", { slug }) };
 	}
 	if (action === "purge") {
-		if ((await readSiteState(slug))?.state !== "deleted") return { ok: false, message: `"${slug}" is not deleted.` };
+		if ((await readSiteState(slug))?.state !== "deleted") return { ok: false, message: t("fleet.result.notDeleted", { slug }) };
 		after(() => runAsSite(primary, () => purgeSite(slug)).then(() => undefined));
-		return { ok: true, message: `${slug}: purge started. It takes about a minute.` };
+		return { ok: true, message: t("fleet.result.purge", { slug }) };
 	}
-	return { ok: false, message: "Unknown action." };
+	return { ok: false, message: t("fleet.result.unknown") };
 }
