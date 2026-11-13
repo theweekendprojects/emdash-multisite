@@ -12,6 +12,12 @@ contain breaking changes).
   (`emdash:taxonomy-defs@2`, `emdash:taxonomy-names`, now the `:swr` variants), and the
   edge-cache settings-memo self-check now uses the current `emdash:site-settings:swr` key.
   No runtime change.
+- EmDash 1.5.0 support: the cache tripwire failed the build on 11 cache keys new in
+  1.5.0. All are classified site-independent in `SITE_INDEPENDENT_KEYS`: two per-row
+  markers (`emdash:entryTitleField`, `emdash:foldedBylineFieldsVersion`), four object-cache
+  internals (object cache stays unsupported), three co-editing keys (`emdash:rooms:*`,
+  opt-in, off by default), the build-config plugin memo (`emdash:plugins`) and three
+  browser-side admin keys (`emdash.admin.adminLayoutStores`, `emdash.blocks-field.*`).
 
 ## [0.8.0] - 2026-11-02
 
