@@ -151,6 +151,7 @@ That's the whole integration: install + three wires. No plugin entry, no EmDash 
 
 | `themes` | `Record<id, { name, description?, seed? }>` | Themes a new site can pick. Each `seed` is an EmDash seed JSON applied when the site is created. Omit for a single theme (the host's bundled seed). |
 | `defaultTheme` | `string` | Preselected in the wizard and used when none is requested. Defaults to the first theme. |
+| `locale` | `string` | Language of the console, the account "Sites" tab, Fleet, each site's "Site" admin page, the status and handoff pages and the API error messages: `"en"` or `"fr"` (a tag like `"fr-FR"` is accepted). Defaults to the Astro/EmDash `i18n.defaultLocale`, then English. One language per deployment, set at build time: it is never negotiated from the request (no `Accept-Language`), so caching is unaffected. |
 
 Supported inner adapters: `d1({...})` (Cloudflare) and `sqlite({...})` (local/Node dev). Site ids
 are DNS labels: `^[a-z0-9](?:[a-z0-9-]{0,38}[a-z0-9])?$`. Unknown hostnames resolve to `primary`.
@@ -267,6 +268,8 @@ Run with Node ≥ 22.18 (e.g. `~/.nvm/versions/node/v22.23.2/bin/node --no-warni
 - `scripts/console.selfcheck.ts` — parses the console pages' embedded client script (a syntax slip
   only shows in the browser otherwise) and checks site URL rules.
 - `scripts/fleet.selfcheck.ts` — fleet view rules.
+- `scripts/i18n.selfcheck.ts` — the message catalogs: helpers, plural pairs, every locale has the
+  English keys and placeholders, locale matching, and every key used in `src/` exists.
 
 ## Upgrading EmDash (important)
 

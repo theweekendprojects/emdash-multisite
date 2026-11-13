@@ -45,6 +45,9 @@ node --no-warnings scripts/orgs.selfcheck.ts
 # The edge-cache pure rules + purger behaviour
 node --no-warnings scripts/edge-cache.selfcheck.ts
 
+# The message catalog: helpers, plural pairs, every key used exists and every message is used
+node --no-warnings scripts/i18n.selfcheck.ts
+
 # The cache tripwire — scans an installed emdash and fails if any cache key is
 # unclassified. Point it at a consuming site's node_modules.
 node --no-warnings scripts/caches.selfcheck.ts /path/to/a-site/node_modules

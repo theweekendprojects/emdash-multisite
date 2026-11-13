@@ -7,6 +7,21 @@ contain breaking changes).
 
 ## [Unreleased]
 
+### Added
+- **French translation** (#3). New `locale` option in `SitesConfig` (`"en"` or `"fr"`), defaulting
+  to the Astro/EmDash `i18n.defaultLocale`, then English. Build-time only, never read from the
+  request. The console, account "Sites" tab, Fleet, the site admin page, status and handoff pages
+  and API error messages follow it; `<html lang>` on the console and status pages follows it too.
+  French catalog in `src/i18n-fr.ts`.
+
+### Changed
+- **User-facing strings moved to a catalog** (`src/i18n.ts`, English only), groundwork for
+  translations (#3). Console, account "Sites" tab, Fleet, the site's admin page, status and
+  handoff pages, sign-in links, the demo strip and the API error messages people read now go
+  through `t(key, params)` / `tn(base, count)` with `{named}` placeholders. The console page
+  embeds only the `console.*` messages as JSON for its client script. No visible change: the
+  rendered text and HTML are the same. New self-check: `scripts/i18n.selfcheck.ts`.
+
 ### Fixed
 - Self-checks aligned with EmDash 1.4.0: dropped the dead taxonomy holder cache keys
   (`emdash:taxonomy-defs@2`, `emdash:taxonomy-names`, now the `:swr` variants), and the

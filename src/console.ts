@@ -4,6 +4,7 @@
  * through Better Auth's organization/create so every rule in one place applies.
  */
 import { isStaff } from "./fleet.ts";
+import { getLocale, t, type Locale } from "./i18n.ts";
 import { billingEnabled, isEmailVerified, readActivePlan, readAllStates, readAllStatuses, readOrgs, readSiteTheme, resolveLimits } from "./registry.ts";
 import { effectiveTheme, needsReconcile, slugProblem, switchSummary, themeFromMetadata, type SiteStatus } from "./rules.ts";
 import { siteUrl, type SitesConfig } from "./sites.ts";
@@ -42,6 +43,8 @@ export interface ConsoleState {
 	plan: string | null;
 	/** Billing is configured, so `/account/billing` exists and the Upgrade link should show. */
 	canUpgrade: boolean;
+	/** The deployment's locale, so the account tab (a browser bundle) renders in the same language. */
+	locale: Locale;
 }
 
 export async function consoleState(userId: string, config: SitesConfig): Promise<ConsoleState> {
@@ -92,6 +95,7 @@ export async function consoleState(userId: string, config: SitesConfig): Promise
 		max: limits.sitesPerUser ?? null,
 		plan,
 		canUpgrade,
+		locale: getLocale(),
 	};
 }
 
@@ -100,7 +104,7 @@ export async function checkAddress(slug: unknown, primary: string): Promise<{ av
 	const problem = slugProblem(slug, primary);
 	if (problem) return { available: false, message: problem };
 	const taken = (await readOrgs()).some((o) => o.slug === slug);
-	return taken ? { available: false, message: "That address is taken." } : { available: true, message: null };
+	return taken ? { available: false, message: t("api.address.taken") } : { available: true, message: null };
 }
 
 /** May this user change the site's settings (theme)? The owner, or staff; the control plane is staff only. */
