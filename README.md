@@ -372,7 +372,7 @@ Anyone can register on the control plane and create a site; the limits decide wh
 ```ts
 withSites(d1({ binding: "DB" }), {
   primary: "main", wildcard: "example.com", appUrl: "https://app.example.com", authBar: true,
-  limits: { sitesPerUser: 1, totalSites: 5000, mediaBytesPerSite: 200 * 1024 * 1024 },
+  limits: { sitesPerUser: 1, totalSites: 200, mediaBytesPerSite: 200 * 1024 * 1024 },
 })
 ```
 The account page shows "N of M sites used". Needed alongside: a working email sender with `requireEmailVerification` on (otherwise
@@ -626,6 +626,14 @@ idempotent and resumes after a partial run. Not supported: renaming a site (the 
 
 ## Limits & gotchas
 
+- **All sites share one D1 database.** Tenants are separated by table-name suffix (`ec_posts$slug`),
+  not by database, so every site shares one D1's resource budget, one SQLite write connection, and one
+  `sqlite_master` that grows with each site (~370 objects — tables, indexes, triggers — per site). The
+  practical ceiling of a single D1 is in the **low hundreds of sites**, lower if they are busy:
+  provisioning cost rises with the number of existing sites, and under read concurrency a large database
+  can hit `D1_ERROR: D1 DB is overloaded` well before `totalSites` is reached. Set `limits.totalSites`
+  conservatively (the Free-tier example uses `200`) rather than to a number like several thousand.
+  Spreading sites across multiple D1 databases (sharding) is not built yet; see the roadmap.
 - **Object cache is not per-site.** Do **not** enable the object cache (`objectCache:`) on a
   multi-site deploy, or cached content can cross sites. R2 media is per-site only through the
   `emdash-multisite/storage` entrypoint; a plain `r2()` descriptor shares one namespace.
