@@ -10,7 +10,7 @@
  * The client script avoids backticks and `${` on purpose: it lives inside a
  * template literal. Its strings come from src/i18n.ts (`console.*`), embedded as JSON.
  */
-import { messagesFor, tHtml } from "./i18n.ts";
+import { getLocale, messagesFor, tHtml } from "./i18n.ts";
 
 const CLIENT_JS = String.raw`
 (() => {
@@ -317,7 +317,7 @@ const clientMessages = (): string => JSON.stringify(messagesFor("console.")).rep
 
 export function consolePageHtml(mode: "list" | "new" | "appearance", slug = ""): string {
 	return `<!doctype html>
-<html lang="en">
+<html lang="${getLocale()}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">

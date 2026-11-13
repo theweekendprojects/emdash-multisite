@@ -1,6 +1,7 @@
 /** Checks for the message catalog (src/i18n.ts): `node --no-warnings scripts/i18n.selfcheck.ts` */
 import { readdirSync, readFileSync } from "node:fs";
-import { escapeHtml, messageKeys, messagesFor, t, tHtml, tn, type MessageKey } from "../src/i18n.ts";
+import { LOCALES, catalogFor, escapeHtml, getLocale, matchLocale, messageKeys, messagesFor, resolveLocale, setLocale, t, tHtml, tn, type MessageKey } from "../src/i18n.ts";
+import { assertSitesConfig } from "../src/sites.ts";
 let failed = 0;
 const check = (name: string, got: unknown, want: unknown) => {
 	const ok = JSON.stringify(got) === JSON.stringify(want);
@@ -42,7 +43,7 @@ const NAMESPACES = /["'`]((?:console|account|fleet|sitePage|status|handoff|demo|
 const srcDir = new URL("../src/", import.meta.url);
 const used = new Set<string>();
 const prefixes = new Set<string>();
-for (const file of readdirSync(srcDir).filter((f) => f.endsWith(".ts") && f !== "i18n.ts")) {
+for (const file of readdirSync(srcDir).filter((f) => f.endsWith(".ts") && !/^i18n(-\w+)?\.ts$/.test(f))) {
 	for (const m of readFileSync(new URL(file, srcDir), "utf8").matchAll(NAMESPACES)) (m[2] ? prefixes : used).add(m[2] ? `${m[1]}.` : m[1]!);
 }
 const known = new Set<string>(keys);
@@ -50,6 +51,27 @@ const pluralBases = new Set(keys.filter((k) => k.endsWith(".one")).map((k) => k.
 check("every key used in src/ exists", [...used].filter((k) => !known.has(k) && !pluralBases.has(k) && ![...prefixes].some((p) => `${k}.` === p)), []);
 const covered = (k: string) => used.has(k) || pluralBases.has(k.replace(/\.(one|other)$/, "")) && used.has(k.replace(/\.(one|other)$/, "")) || [...prefixes].some((p) => k.startsWith(p));
 check("every message is used", keys.filter((k) => !covered(k)), []);
+
+// ---- locales ----
+check("locales: en and fr", LOCALES, ["en", "fr"]);
+check("matchLocale: tags and case", ["fr", "fr-FR", "FR_fr", " en-GB ", "de", "", null, 3].map(matchLocale), ["fr", "fr", "fr", "en", null, null, null, null]);
+check("resolveLocale: config wins, then the i18n default, then English", [resolveLocale("fr", "en"), resolveLocale(undefined, "fr-FR"), resolveLocale("xx", "de"), resolveLocale(undefined, undefined)], ["fr", "fr", "en", "en"]);
+check("English is the default", getLocale(), "en");
+for (const locale of LOCALES) {
+	const messages = catalogFor(locale);
+	check(`${locale}: same keys as English, in the same order`, Object.keys(messages), keys);
+	check(`${locale}: same placeholders as English`, keys.filter((k) => JSON.stringify(placeholders(messages[k])) !== JSON.stringify(placeholders(t(k)))), []);
+	check(`${locale}: no empty message`, keys.filter((k) => !messages[k].trim()), []);
+}
+check("fr: no straight apostrophe or quote", keys.filter((k) => /['"]/.test(catalogFor("fr")[k])), []);
+setLocale("fr");
+check("setLocale switches t", t("fleet.action.purge"), "Purger");
+check("fr plural: 0 and 1 are singular", [tn("api.purgeNotDue", 0, { days: 0 }), tn("api.purgeNotDue", 1, { days: 1 }), tn("api.purgeNotDue", 2, { days: 2 })], ["Les sites supprimés sont conservés 0 jour.", "Les sites supprimés sont conservés 1 jour.", "Les sites supprimés sont conservés 2 jours."]);
+check("fr: the client slice follows the locale", messagesFor("console.")["console.nav.sites"], "Mes sites");
+setLocale("en");
+check("back to English", t("fleet.action.purge"), "Purge");
+const configError = (locale: string) => { try { assertSitesConfig({ primary: "app", locale }); return null; } catch (e) { return (e as Error).message; } };
+check("config: a locale without a catalog is refused", [configError("fr-FR"), configError("de")], [null, '[multisite] locale "de" has no catalog (available: en, fr)']);
 
 console.log(failed ? `\n${failed} FAILED` : "\nall passed");
 process.exit(failed ? 1 : 0);

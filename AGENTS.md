@@ -84,7 +84,9 @@ EmDash's modules in the *build output* via Vite.
 | `src/middleware.ts` | `onRequest` outer middleware: hostname→site, org-create guard+glue, status route. |
 | `src/orgs.ts` | `slugProblem`, `createSiteForOrg`, `parseCreatedOrg`, `readStatus`, `RESERVED_SITE_IDS`, `ORG_CREATE_PATH`. |
 | `src/provision.ts` | `provisionSite(db, siteId)` / `provisionWith` — run core migrations as a site. |
-| `src/i18n.ts` | Message catalog for every user-facing string: `t`, `tn` (plural), `tHtml`, `messagesFor(prefix)` for client scripts. English only; no request input. |
+| `src/i18n.ts` | Message catalog for every user-facing string: `t`, `tn` (plural), `tHtml`, `messagesFor(prefix)` for client scripts; `resolveLocale`/`setLocale`. No request input. |
+| `src/i18n-fr.ts` | French catalog (same keys and placeholders as English, checked by the i18n self-check). |
+| `src/locale.ts` | `initLocale()`: sets the deployment's locale once per isolate (`SitesConfig.locale` → Astro `i18n.defaultLocale` → `en`). Called by the middleware and the admin plugin. |
 | `src/bootstrap.ts` | `bootstrapControlPlane(db, email)` — one-time: promote the primary site's first user to admin + set setup flag. |
 | `scripts/selfcheck.ts` | Oracle: real core migrations + repositories through the wrapper, isolation asserts. |
 | `scripts/caches.selfcheck.ts` | Cache tripwire: scans `emdash` + all `@emdash-cms/*` for unclassified/reshaped caches. |
@@ -279,6 +281,11 @@ runtime, every query) reads it from ALS/the request db. There is no per-call sit
   `txtn`; `auth-ui.ts` imports `t` as `txt`. Both files already have locals named `t`, `tr` and
   `msg` (looks, timers, the themes response, a status message), which would shadow a helper of the
   same name and break only at run time in the browser. Keep the helper names distinct.
+- **The locale is per deployment, never per request.** `initLocale()` sets a module-level locale once
+  per isolate from build-time config. Do not derive it from `Accept-Language` or the site: every
+  rendering path (console, Fleet, status pages, edge-cached pages) assumes one language. A new
+  catalog must have every English key and placeholder (the i18n self-check fails otherwise); in
+  French, write `du site {name}` rather than `de {name}` (no elision rule can apply to a name).
 - **Zsh does not word-split unquoted variables.** `H='-H a -H b'; curl $H` sends nothing; in test
   scripts use explicit flags or a function.
 

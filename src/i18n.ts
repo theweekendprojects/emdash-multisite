@@ -10,9 +10,14 @@
  *   only `console.*` as JSON, not the whole catalog).
  *
  * Pure and dependency-free: it runs under plain Node (scripts/i18n.selfcheck.ts), in the Worker and
- * in the browser (auth-ui.ts imports it). English only for now; the locale is fixed, and nothing here
- * reads the request, so cache keys, the SQL rewrite and the per-site caches are untouched.
+ * in the browser (auth-ui.ts imports it). Catalogs: English (below) and French (`i18n-fr.ts`).
+ *
+ * The locale is a build-time setting, the same for every request of a deployment: `resolveLocale`
+ * picks `SitesConfig.locale`, else the EmDash/Astro i18n default locale, else English (see
+ * `locale.ts`). Nothing here reads the request (no `Accept-Language`), so cache keys, the SQL
+ * rewrite and the per-site caches are untouched.
  */
+import { fr } from "./i18n-fr.ts";
 
 const en = {
 	// ---- console (/sites, /sites/new, /sites/<slug>/appearance), server shell ----
@@ -278,10 +283,34 @@ export type MessageKey = keyof typeof en;
 export type PluralKey = { [K in MessageKey]: K extends `${infer B}.one` ? B : never }[MessageKey];
 export type Params = Record<string, string | number>;
 
-/** The catalog in use. A single locale for now. */
-const LOCALE = "en";
-const catalog: Record<MessageKey, string> = en;
-const plural = new Intl.PluralRules(LOCALE);
+const CATALOGS = { en, fr } satisfies Record<string, Record<MessageKey, string>>;
+export type Locale = keyof typeof CATALOGS;
+/** Locales with a catalog. */
+export const LOCALES = Object.keys(CATALOGS) as Locale[];
+
+/** A language tag (`fr`, `fr-FR`, `FR_fr`) as a supported locale, or `null`. */
+export function matchLocale(tag: unknown): Locale | null {
+	if (typeof tag !== "string") return null;
+	const base = tag.trim().toLowerCase().split(/[-_]/)[0];
+	return (LOCALES as string[]).includes(base ?? "") ? (base as Locale) : null;
+}
+
+/** The configured locale, else the EmDash/Astro i18n default locale, else English. */
+export function resolveLocale(configured: unknown, i18nDefault: unknown): Locale {
+	return matchLocale(configured) ?? matchLocale(i18nDefault) ?? "en";
+}
+
+/** The catalog in use: set once per isolate (`locale.ts`) or per page (`auth-ui.ts`). Defaults to English. */
+let current: Locale = "en";
+let catalog: Record<MessageKey, string> = CATALOGS.en;
+let plural = new Intl.PluralRules("en");
+
+export function setLocale(locale: Locale): void {
+	current = locale;
+	catalog = CATALOGS[locale];
+	plural = new Intl.PluralRules(locale);
+}
+export const getLocale = (): Locale => current;
 
 const fill = (text: string, params: Params | undefined, map: (v: string) => string = (v) => v): string =>
 	params ? text.replace(/\{(\w+)\}/g, (m, name: string) => (Object.hasOwn(params, name) ? map(String(params[name])) : m)) : text;
@@ -309,5 +338,7 @@ export function messagesFor(prefix: string): Record<string, string> {
 	return Object.fromEntries(Object.entries(catalog).filter(([k]) => k.startsWith(prefix)));
 }
 
-/** All message keys (for the self-check). */
-export const messageKeys = (): MessageKey[] => Object.keys(catalog) as MessageKey[];
+/** All message keys, in catalog order (for the self-check). */
+export const messageKeys = (): MessageKey[] => Object.keys(en) as MessageKey[];
+/** One locale's raw messages (for the self-check). */
+export const catalogFor = (locale: Locale): Record<MessageKey, string> => CATALOGS[locale];

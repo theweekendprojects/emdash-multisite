@@ -7,6 +7,13 @@ contain breaking changes).
 
 ## [Unreleased]
 
+### Added
+- **French translation** (#3). New `locale` option in `SitesConfig` (`"en"` or `"fr"`), defaulting
+  to the Astro/EmDash `i18n.defaultLocale`, then English. Build-time only, never read from the
+  request. The console, account "Sites" tab, Fleet, the site admin page, status and handoff pages
+  and API error messages follow it; `<html lang>` on the console and status pages follows it too.
+  French catalog in `src/i18n-fr.ts`.
+
 ### Changed
 - **User-facing strings moved to a catalog** (`src/i18n.ts`, English only), groundwork for
   translations (#3). Console, account "Sites" tab, Fleet, the site's admin page, status and
