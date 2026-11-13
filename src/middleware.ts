@@ -41,6 +41,7 @@ import { sitesConfig } from "./config.ts";
 import { safeNext, signHandoff, verifyHandoff } from "./handoff.ts";
 import { purgeSite } from "./purge.ts";
 import { siteUrl } from "./sites.ts";
+import { t, tHtml, tn } from "./i18n.ts";
 import { sql } from "kysely";
 import { getDb } from "emdash/runtime";
 import { effectiveLimits, TEMPLATE_PREFIX, demoBannerHtml, demoGuard, isTemplateId, lostLimitRace, SIGNUP_PATH, emailDomainBlocked, DEFAULT_DELETE_GRACE_DAYS, DEFAULT_LIMITS, DEFAULT_POST_LOGIN_PATH, csrfOk, isPurgeDue, loginEntryRedirect, transition, type SiteState, type StateAction, createProblem, needsReconcile, effectiveTheme, isThemeRouteRequest, isThemed, themeFromMetadata, themeProblem, themeRoute } from "./rules.ts";
@@ -91,6 +92,7 @@ const forbidden = () => new Response(JSON.stringify({ code: "CSRF", message: "Mi
 });
 const html = (body: string, status: number) =>
 	new Response(body, { status, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
+const notFoundPage = () => html(`<!doctype html><meta charset=utf-8><title>${tHtml("status.notFound")}</title><h1>${tHtml("status.notFound")}</h1>`, 404);
 
 /** The signed-in EmDash user id, or null. Set by emdash-better-auth as session "user" = { id }. */
 async function sessionUserId(ctx: Ctx): Promise<string | null> {
@@ -127,7 +129,7 @@ async function createOrRejectSite(sites: SitesConfig, org: NonNullable<ReturnTyp
 	await createSiteForOrg(org, planFor(sites, { theme: org.theme }));
 }
 const tooMany = () =>
-	new Response(JSON.stringify({ code: "RATE_LIMITED", message: "Too many requests. Try again in a minute." }), {
+	new Response(JSON.stringify({ code: "RATE_LIMITED", message: t("api.rateLimited") }), {
 		status: 429,
 		headers: { "content-type": "application/json", "cache-control": "no-store", "retry-after": "60" },
 	});
@@ -142,7 +144,7 @@ async function guardSignup(ctx: Ctx, sites: SitesConfig): Promise<Response | nul
 	const body = (await ctx.request.clone().json().catch(() => null)) as { email?: unknown } | null;
 	if (emailDomainBlocked(body?.email, sites.blockedEmailDomains)) {
 		log("signup.blocked_domain");
-		return json({ code: "EMAIL_DOMAIN_BLOCKED", message: "Please sign up with a permanent email address." }, 400);
+		return json({ code: "EMAIL_DOMAIN_BLOCKED", message: t("api.signup.emailDomain") }, 400);
 	}
 	if (await overLimit("SIGNUP_LIMITER", ctx.request.headers.get("cf-connecting-ip") ?? "unknown")) {
 		log("signup.rate_limited");
@@ -233,15 +235,15 @@ async function serveDemo(ctx: Ctx, sites: SitesConfig, site: string, next: Next)
 /** What visitors of a suspended or deleted site see. A deleted site is indistinguishable from one that never existed. */
 function unavailable(state: SiteState): Response {
 	return state.state === "deleted"
-		? html("<!doctype html><meta charset=utf-8><title>Not found</title><h1>Not found</h1>", 404)
-		: html("<!doctype html><meta charset=utf-8><title>Site unavailable</title><h1>This site is unavailable</h1><p>It has been suspended. If this is your site, contact support.</p>", 503);
+		? notFoundPage()
+		: html(`<!doctype html><meta charset=utf-8><title>${tHtml("status.unavailable.title")}</title><h1>${tHtml("status.unavailable.heading")}</h1><p>${tHtml("status.unavailable.text")}</p>`, 503);
 }
 
 const HANDOFF_PATH = "/_multisite/handoff";
 const noStore = { "cache-control": "no-store", "referrer-policy": "no-referrer" };
 const redirectTo = (location: string) => new Response(null, { status: 302, headers: { location, ...noStore } });
 const handoffFailed = () =>
-	html("<!doctype html><meta charset=utf-8><title>Link expired</title><p>This sign-in link has expired or was already used. Go back and open the admin again.</p>", 403);
+	html(`<!doctype html><meta charset=utf-8><title>${tHtml("handoff.expired.title")}</title><p>${tHtml("handoff.expired.text")}</p>`, 403);
 
 /**
  * Tenant side of "Open admin": check the signed link the control plane made,
@@ -294,7 +296,7 @@ async function handle(context: Ctx, next: Next): Promise<Response> {
 		if (site !== sites.primary) {
 			await warm();
 			// Never start the runtime of a site that does not exist: it would create the site's tables.
-			if (!(await siteExists(site, fresh))) return html("<!doctype html><meta charset=utf-8><title>Not found</title><h1>Not found</h1>", 404);
+			if (!(await siteExists(site, fresh))) return notFoundPage();
 			const blocked = await readSiteState(site, fresh);
 			if (blocked) return unavailable(blocked);
 			if (isTemplateId(site)) return serveDemo(context, sites, site, next);
@@ -307,7 +309,7 @@ async function handle(context: Ctx, next: Next): Promise<Response> {
 
 		// Organization deletes would orphan the site's tables; deleting goes through the state route.
 		if (method === "POST" && pathname === "/api/auth/organization/delete") {
-			return json({ code: "USE_DELETE_SITE", message: "Delete the site from My sites instead." }, 403);
+			return json({ code: "USE_DELETE_SITE", message: t("api.deleteFromSites") }, 403);
 		}
 
 		// Suspend / resume (staff) and delete / restore: the site's operational state.
@@ -349,7 +351,7 @@ async function handle(context: Ctx, next: Next): Promise<Response> {
 			const body = (await context.request.json().catch(() => null)) as { force?: unknown } | null;
 			const graceDays = sites.deleteGraceDays ?? DEFAULT_DELETE_GRACE_DAYS;
 			if (body?.force !== true && !isPurgeDue(current, graceDays, Date.now())) {
-				return json({ code: "NOT_DUE", message: `Deleted sites are kept ${graceDays} days.` }, 409);
+				return json({ code: "NOT_DUE", message: tn("api.purgeNotDue", graceDays, { days: graceDays }) }, 409);
 			}
 			after(async () => {
 				try {
@@ -390,7 +392,7 @@ async function handle(context: Ctx, next: Next): Promise<Response> {
 					return json({ code: "BAD_REQUEST" }, 400);
 				}
 				const issue = themeProblem(body?.theme, sites.themes);
-				if (issue || typeof body?.theme !== "string") return json({ code: "INVALID_THEME", message: issue ?? "Choose a theme." }, 400);
+				if (issue || typeof body?.theme !== "string") return json({ code: "INVALID_THEME", message: issue ?? t("api.theme.missing") }, 400);
 				const state = await appearanceState(slug, sites);
 				if (!state) return json({ code: "NOT_FOUND" }, 404);
 				// Re-applying the current theme is allowed: it is additive and repairs a site

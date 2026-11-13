@@ -10,6 +10,7 @@
  * bursts, not slow trickles. Upgrade path: Turnstile on sign-up (needs a site key).
  */
 import { platformEnv } from "./platform-env.ts";
+import { t } from "./i18n.ts";
 
 export type Limiter = "SIGNUP_LIMITER" | "CREATE_LIMITER" | "CREATE_IP_LIMITER";
 
@@ -42,7 +43,7 @@ export async function verifyTurnstile(token: string | undefined, remoteIp: strin
 			headers: { "content-type": "application/json", "cache-control": "no-store" },
 		});
 	// Secret is set, so the client must send a token.
-	if (!token) return fail("TURNSTILE_MISSING", "Security check failed. Please try again.");
+	if (!token) return fail("TURNSTILE_MISSING", t("api.security.failed"));
 
 	try {
 		const formData = new FormData();
@@ -56,7 +57,7 @@ export async function verifyTurnstile(token: string | undefined, remoteIp: strin
 		});
 
 		const outcome = (await result.json()) as { success: boolean; "error-codes"?: string[] };
-		if (!outcome.success) return fail("TURNSTILE_FAILED", `Security check failed: ${outcome["error-codes"]?.join(", ") ?? "Invalid token"}`);
+		if (!outcome.success) return fail("TURNSTILE_FAILED", t("api.security.failedWith", { reason: outcome["error-codes"]?.join(", ") ?? t("api.security.invalidToken") }));
 		return null;
 	} catch {
 		// Network error - fail open to avoid blocking legitimate users

@@ -6,6 +6,8 @@
  * - visitor, public sign-up off: nothing
  * - signed in:                   My account, and Admin from the author role (30) up (unless the theme draws its own)
  */
+import { t } from "./i18n.ts";
+
 export interface AuthLink {
 	label: string;
 	href: string;
@@ -14,8 +16,8 @@ export interface AuthLink {
 }
 
 export function authLinksFor(opts: { signup: boolean; account: string; user: { role?: number } | null | undefined; admin?: boolean }): AuthLink[] {
-	if (!opts.user) return opts.signup ? [{ label: "Sign in", href: "/login" }, { label: "Sign up", href: "/signup", cta: true }] : [];
-	const links: AuthLink[] = [{ label: "My account", href: opts.account }];
-	if (opts.admin !== false && (opts.user.role ?? 0) >= 30) links.push({ label: "Admin", href: "/_emdash/admin" });
+	if (!opts.user) return opts.signup ? [{ label: t("links.signIn"), href: "/login" }, { label: t("links.signUp"), href: "/signup", cta: true }] : [];
+	const links: AuthLink[] = [{ label: t("links.account"), href: opts.account }];
+	if (opts.admin !== false && (opts.user.role ?? 0) >= 30) links.push({ label: t("links.admin"), href: "/_emdash/admin" });
 	return links;
 }

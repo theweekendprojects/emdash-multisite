@@ -21,6 +21,7 @@ import { listSites } from "./fleet.ts";
 import { runFleetAction } from "./fleet-actions.ts";
 import { PURGE_FORM_ACTION, fleetBlocks, parseFleetAction } from "./fleet-blocks.ts";
 import { isSiteId } from "./rewrite.ts";
+import { t } from "./i18n.ts";
 
 
 interface Interaction {
@@ -43,33 +44,33 @@ async function buildPage(toast?: Page["toast"]): Promise<Page> {
 	const slug = activeSite();
 	if (slug === scopeState().primary) return fleetPage(toast);
 	const state = sites ? await appearanceState(slug, sites) : null;
-	const blocks: unknown[] = [{ type: "header", text: "Site" }];
+	const blocks: unknown[] = [{ type: "header", text: t("sitePage.title") }];
 
 	if (!sites || !state) {
 		blocks.push({
 			type: "context",
-			text: `This site is not managed by the multi-site platform (site "${slug}", ${sites ? (sites.themes ? "no matching organization" : "no themes configured") : "no multisite config"}).`,
+			text: t("sitePage.unmanaged", { slug, reason: t(sites ? (sites.themes ? "sitePage.unmanaged.noOrg" : "sitePage.unmanaged.noThemes") : "sitePage.unmanaged.noConfig") }),
 		});
 		return { blocks, ...(toast ? { toast } : {}) };
 	}
 
-	blocks.push({ type: "context", text: `${state.name} (${state.slug})` });
+	blocks.push({ type: "context", text: t("sitePage.identity", { name: state.name, slug: state.slug }) });
 	blocks.push({
 		type: "context",
-		text: `Public sign-up is ${(await signUpOpen(slug)) ? "ON: visitors can create an account" : "OFF: only people you add can sign in"}. Change it in Settings, Better Auth, "Allow new sign-ups".`,
+		text: t("sitePage.signup", { state: t((await signUpOpen(slug)) ? "sitePage.signup.on" : "sitePage.signup.off") }),
 	});
 
 	if (state.themes.length > 1 && sites.appUrl) {
 		// One home for theme switching: the Sites tab of the account page (Better Auth UI).
 		const current = state.themes.find((t) => t.current);
-		blocks.push({ type: "divider" }, { type: "header", text: "Appearance" });
-		blocks.push({ type: "context", text: `Theme: ${current?.name ?? state.current}. Switching keeps all of your content; anything the new theme does not show is hidden and comes back if you switch back.` });
+		blocks.push({ type: "divider" }, { type: "header", text: t("sitePage.appearance.title") });
+		blocks.push({ type: "context", text: t("sitePage.appearance.text", { name: current?.name ?? state.current }) });
 		blocks.push({
 			type: "actions",
 			elements: [
 				{
 					type: "link" as const,
-					label: "Change theme",
+					label: t("sitePage.appearance.change"),
 					target: { kind: "external" as const, url: `${sites.appUrl}/account/sites?appearance=${state.slug}` },
 					appearance: "secondary" as const,
 				},
@@ -83,8 +84,8 @@ async function buildPage(toast?: Page["toast"]): Promise<Page> {
 			target: { kind: "external" as const, url: `${sites.appUrl}${path}` },
 			appearance: "secondary" as const,
 		});
-		blocks.push({ type: "divider" }, { type: "header", text: "Account" });
-		blocks.push({ type: "actions", elements: [link("/account/sites", "My sites"), link("/account", "Account")] });
+		blocks.push({ type: "divider" }, { type: "header", text: t("sitePage.account.title") });
+		blocks.push({ type: "actions", elements: [link("/account/sites", t("sitePage.account.sites")), link("/account", t("sitePage.account.account"))] });
 	}
 	return { blocks, ...(toast ? { toast } : {}) };
 }
@@ -111,7 +112,7 @@ export function createPlugin() {
 			"byline:afterSave": { handler: async () => void (await purgeSiteCache(activeSite())) },
 			"byline:afterDelete": { handler: async () => void (await purgeSiteCache(activeSite())) },
 		},
-		admin: { pages: [{ path: PLUGIN_PAGE_PATH, label: "Site", icon: "globe" }] },
+		admin: { pages: [{ path: PLUGIN_PAGE_PATH, label: t("sitePage.title"), icon: "globe" }] },
 		routes: {
 			admin: {
 				// Admin-only: changing the theme changes the whole public site.
@@ -129,7 +130,7 @@ export function createPlugin() {
 						if (interaction.type === "form_submit" && interaction.action_id === PURGE_FORM_ACTION) {
 							const slug = interaction.values?.slug;
 							if (typeof slug !== "string" || !isSiteId(slug) || interaction.values?.confirm !== true) {
-								return fleetPage({ message: "Pick a site and tick the box to purge.", type: "error" });
+								return fleetPage({ message: t("fleet.purge.missing"), type: "error" });
 							}
 							const r = await runFleetAction(sitesConfigured, slug, "purge");
 							return fleetPage({ message: r.message, type: r.ok ? "success" : "error" });

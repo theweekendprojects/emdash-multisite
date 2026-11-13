@@ -4,6 +4,7 @@
  * (scripts/fleet.selfcheck.ts). The actions themselves run in fleet-actions.ts.
  */
 import { isSiteId } from "./rewrite.ts";
+import { t, type MessageKey } from "./i18n.ts";
 
 /** What the page needs to know about a site (a subset of `FleetSite`). */
 export interface FleetRow {
@@ -21,14 +22,14 @@ const ACTIONS: ReadonlySet<string> = new Set<FleetAction>(["suspend", "resume", 
 export const ROW_ACTION_PREFIX = "fleet:";
 export const PURGE_FORM_ACTION = "fleet_purge";
 
-const LABELS: Record<FleetAction, string> = {
-	suspend: "Suspend",
-	resume: "Resume",
-	delete: "Delete (kept 14 days)",
-	restore: "Restore",
-	retry: "Retry setup",
-	backup: "Back up now",
-	purge: "Purge",
+const LABELS: Record<FleetAction, MessageKey> = {
+	suspend: "fleet.action.suspend",
+	resume: "fleet.action.resume",
+	delete: "fleet.action.delete",
+	restore: "fleet.action.restore",
+	retry: "fleet.action.retry",
+	backup: "fleet.action.backup",
+	purge: "fleet.action.purge",
 };
 
 /** Actions that make sense for a site in its current state. Purge is not here: it has its own confirmed form. */
@@ -52,29 +53,29 @@ export function fleetBlocks(all: FleetRow[], primary: string): unknown[] {
 	const deleted = sites.filter((s) => s.state === "deleted");
 	const attention = count((s) => s.state === "active" && s.status !== "ready");
 	const blocks: unknown[] = [
-		{ type: "header", text: "Fleet" },
+		{ type: "header", text: t("fleet.title") },
 		{
 			type: "stats",
 			items: [
-				{ label: "Sites", value: sites.length - deleted.length },
-				{ label: "Needs attention", value: attention, trend: attention ? "down" : "neutral" },
-				{ label: "Suspended", value: count((s) => s.state === "suspended") },
-				{ label: "Deleted, not purged", value: deleted.length },
-				{ label: "Users on sites", value: sites.reduce((n, s) => n + s.userCount, 0) },
+				{ label: t("fleet.stats.sites"), value: sites.length - deleted.length },
+				{ label: t("fleet.stats.attention"), value: attention, trend: attention ? "down" : "neutral" },
+				{ label: t("fleet.stats.suspended"), value: count((s) => s.state === "suspended") },
+				{ label: t("fleet.stats.deleted"), value: deleted.length },
+				{ label: t("fleet.stats.users"), value: sites.reduce((n, s) => n + s.userCount, 0) },
 			],
 		},
 	];
 	blocks.push({
 		type: "table",
 		page_action_id: "fleet_page",
-		empty_text: "No sites yet.",
+		empty_text: t("fleet.table.empty"),
 		columns: [
-			{ key: "site", label: "Site", format: "code" },
-			{ key: "owner", label: "Owner" },
-			{ key: "status", label: "Setup", format: "badge" },
-			{ key: "state", label: "State", format: "badge" },
-			{ key: "users", label: "Users", format: "number" },
-			{ key: "created", label: "Created", format: "relative_time" },
+			{ key: "site", label: t("fleet.table.site"), format: "code" },
+			{ key: "owner", label: t("fleet.table.owner") },
+			{ key: "status", label: t("fleet.table.setup"), format: "badge" },
+			{ key: "state", label: t("fleet.table.state"), format: "badge" },
+			{ key: "users", label: t("fleet.table.users"), format: "number" },
+			{ key: "created", label: t("fleet.table.created"), format: "relative_time" },
 			{ key: "actions", label: "", format: "element" },
 		],
 		rows: sites.map((s) => ({
@@ -87,27 +88,27 @@ export function fleetBlocks(all: FleetRow[], primary: string): unknown[] {
 			actions: {
 				type: "menu",
 				action_id: `${ROW_ACTION_PREFIX}${s.slug}`,
-				label: "Actions",
-				items: actionsFor(s).map((a) => ({ label: LABELS[a], value: a })),
+				label: t("fleet.table.actions"),
+				items: actionsFor(s).map((a) => ({ label: t(LABELS[a]), value: a })),
 			},
 		})),
 	});
 	if (deleted.length) {
 		blocks.push(
 			{ type: "divider" },
-			{ type: "header", text: "Purge" },
+			{ type: "header", text: t("fleet.purge.title") },
 			{
 				type: "context",
-				text: "Deleted sites are destroyed automatically after the grace period. Purging now removes the tables, files, backups and organization for good.",
+				text: t("fleet.purge.text"),
 			},
 			{
 				type: "form",
 				block_id: "purge",
 				fields: [
-					{ type: "select", action_id: "slug", label: "Deleted site", options: deleted.map((s) => ({ label: s.slug, value: s.slug })), initial_value: deleted[0]!.slug },
-					{ type: "toggle", action_id: "confirm", label: "I understand this cannot be undone", initial_value: false },
+					{ type: "select", action_id: "slug", label: t("fleet.purge.site"), options: deleted.map((s) => ({ label: s.slug, value: s.slug })), initial_value: deleted[0]!.slug },
+					{ type: "toggle", action_id: "confirm", label: t("fleet.purge.confirm"), initial_value: false },
 				],
-				submit: { label: "Purge now", action_id: PURGE_FORM_ACTION },
+				submit: { label: t("fleet.purge.submit"), action_id: PURGE_FORM_ACTION },
 			},
 		);
 	}

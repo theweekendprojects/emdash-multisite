@@ -3,6 +3,7 @@
  * modules, so scripts/*.selfcheck.ts can import it under plain Node.
  */
 import { isSiteId } from "./rewrite.ts";
+import { t, tHtml, tn } from "./i18n.ts";
 
 export const ORG_CREATE_PATH = "/api/auth/organization/create";
 
@@ -54,11 +55,11 @@ export const isTemplateId = (id: string): boolean => id.startsWith(TEMPLATE_PREF
 
 /** `null` when the slug can be a site id, otherwise a human-readable reason. */
 export function slugProblem(slug: unknown, primary: string): string | null {
-	if (typeof slug !== "string" || slug.length === 0) return "Choose a name for your site address.";
+	if (typeof slug !== "string" || slug.length === 0) return t("api.address.missing");
 	if (!isSiteId(slug)) {
-		return "Use 1-40 lowercase letters, digits or hyphens, starting and ending with a letter or digit.";
+		return t("api.address.invalid");
 	}
-	if (slug === primary || RESERVED_SITE_IDS.has(slug) || isTemplateId(slug)) return `"${slug}" is reserved. Choose another address.`;
+	if (slug === primary || RESERVED_SITE_IDS.has(slug) || isTemplateId(slug)) return t("api.address.reserved", { slug });
 	return null;
 }
 
@@ -186,17 +187,17 @@ export interface Problem {
 export function createProblem(c: CreateContext, limits: Limits = DEFAULT_LIMITS): Problem | null {
 	if (!c.userId) return null;
 	if (!c.emailVerified) {
-		return { status: 403, code: "EMAIL_NOT_VERIFIED", message: "Verify your email address before creating a site." };
+		return { status: 403, code: "EMAIL_NOT_VERIFIED", message: t("api.create.emailNotVerified") };
 	}
 	if (limits.sitesPerUser !== undefined && c.owned >= limits.sitesPerUser) {
 		return {
 			status: 403,
 			code: "SITE_LIMIT_REACHED",
-			message: `You can own up to ${limits.sitesPerUser} site${limits.sitesPerUser === 1 ? "" : "s"}.`,
+			message: tn("api.create.limit", limits.sitesPerUser, { max: limits.sitesPerUser }),
 		};
 	}
 	if (limits.totalSites !== undefined && c.total >= limits.totalSites) {
-		return { status: 503, code: "PLATFORM_FULL", message: "New sites are paused right now. Please try again later." };
+		return { status: 503, code: "PLATFORM_FULL", message: t("api.create.platformFull") };
 	}
 	return null;
 }
@@ -242,9 +243,9 @@ const escapeHtml = (v: string) => v.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt
 /** The strip shown at the bottom of a demo page. `url` is where "Use this theme" goes. */
 export function demoBannerHtml(themeName: string, url: string): string {
 	// The strip is fixed to the bottom; padding keeps it from covering the footer (theme switcher, links).
-	return `<style>body{padding-bottom:64px}</style><div role="region" aria-label="Theme demo" style="position:fixed;inset:auto 0 0 0;z-index:2147483647;display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap;padding:10px 16px;background:#111827;color:#fff;font:500 14px/1.4 system-ui,sans-serif">`
-		+ `<span>This is a demo of the ${escapeHtml(themeName)} theme.</span>`
-		+ `<a href="${escapeHtml(url)}" style="background:#fff;color:#111827;padding:6px 12px;border-radius:8px;text-decoration:none;font-weight:600">Use this theme</a></div>`;
+	return `<style>body{padding-bottom:64px}</style><div role="region" aria-label="${tHtml("demo.label")}" style="position:fixed;inset:auto 0 0 0;z-index:2147483647;display:flex;gap:12px;align-items:center;justify-content:center;flex-wrap:wrap;padding:10px 16px;background:#111827;color:#fff;font:500 14px/1.4 system-ui,sans-serif">`
+		+ `<span>${tHtml("demo.text", { name: themeName })}</span>`
+		+ `<a href="${escapeHtml(url)}" style="background:#fff;color:#111827;padding:6px 12px;border-radius:8px;text-decoration:none;font-weight:600">${tHtml("demo.use")}</a></div>`;
 }
 
 // ---- backups ---------------------------------------------------------------
@@ -337,8 +338,8 @@ export function themeFromMetadata(metadata: unknown): string | null {
 /** Why `requested` cannot be used, or `null` (absent is fine: the default applies). */
 export function themeProblem(requested: unknown, themes: Themes | undefined): string | null {
 	if (requested === undefined || requested === null) return null;
-	if (typeof requested !== "string" || !THEME_ID.test(requested)) return "Choose one of the available themes.";
-	if (!themes || !Object.hasOwn(themes, requested)) return "Choose one of the available themes.";
+	if (typeof requested !== "string" || !THEME_ID.test(requested)) return t("api.theme.invalid");
+	if (!themes || !Object.hasOwn(themes, requested)) return t("api.theme.invalid");
 	return null;
 }
 

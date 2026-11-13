@@ -8,8 +8,9 @@
  * over the same JSON endpoints if the console grows past two screens.
  *
  * The client script avoids backticks and `${` on purpose: it lives inside a
- * template literal.
+ * template literal. Its strings come from src/i18n.ts (`console.*`), embedded as JSON.
  */
+import { messagesFor, tHtml } from "./i18n.ts";
 
 const CLIENT_JS = String.raw`
 (() => {
@@ -17,7 +18,18 @@ const CLIENT_JS = String.raw`
   const root = document.getElementById("root");
   const nav = document.getElementById("nav");
   const esc = (s) => String(s == null ? "" : s).replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
-  const status = (s) => '<span class="pill ' + esc(s) + '">' + esc(s === "provisioning" ? "setting up" : s) + '</span>';
+  // Messages: the console.* slice of src/i18n.ts, embedded by consolePageHtml.
+  // Names chosen not to collide with the locals below (tr, msg, t, ok...).
+  const MSG = JSON.parse(document.getElementById("multisite-i18n").textContent);
+  const plural = new Intl.PluralRules(document.documentElement.lang || "en");
+  const fillMsg = (text, p) => text.replace(/\{(\w+)\}/g, (m, n) => (p && Object.prototype.hasOwnProperty.call(p, n) ? String(p[n]) : m));
+  const rawMsg = (k) => (MSG[k] == null ? k : MSG[k]);
+  // txt: plain text (textContent, confirm, alert). htm: HTML; the message is escaped, params must already be HTML.
+  const txt = (k, p) => fillMsg(rawMsg(k), p);
+  const htm = (k, p) => fillMsg(esc(rawMsg(k)), p);
+  const txtn = (k, n, p) => txt(k + (plural.select(n) === "one" ? ".one" : ".other"), Object.assign({ count: n }, p));
+  const known = (prefix, v) => (MSG[prefix + v] == null ? esc(v) : htm(prefix + v));
+  const status = (s) => '<span class="pill ' + esc(s) + '">' + known("console.status.", s) + '</span>';
   const getJson = async (url, init) => {
     const res = await fetch(url, Object.assign({ headers: { accept: "application/json" }, credentials: "same-origin" }, init));
     let body = null;
@@ -28,28 +40,28 @@ const CLIENT_JS = String.raw`
 
   const renderNav = (me) => {
     nav.innerHTML =
-      '<a href="/sites"' + (mode === "list" ? ' aria-current="page"' : '') + '>My sites</a>' +
-      '<a href="/organization">Teams</a>' +
-      '<a href="/account">Account</a>' +
-      (me && me.staff ? '<a href="/admin/fleet">Fleet</a>' : '');
+      '<a href="/sites"' + (mode === "list" ? ' aria-current="page"' : '') + '>' + htm("console.nav.sites") + '</a>' +
+      '<a href="/organization">' + htm("console.nav.teams") + '</a>' +
+      '<a href="/account">' + htm("console.nav.account") + '</a>' +
+      (me && me.staff ? '<a href="/admin/fleet">' + htm("console.nav.fleet") + '</a>' : '');
   };
 
   // ---------- My sites ----------
   const siteCard = (s, staff, themed) => {
     const suspended = s.state === "suspended";
     const open = s.url && s.status === "ready" && !suspended
-      ? '<a class="btn" href="' + esc(s.url) + '" target="_blank" rel="noopener">Open site</a>' +
-        '<a class="btn primary" href="' + esc(s.adminUrl) + '" target="_blank" rel="noopener">Open admin</a>'
+      ? '<a class="btn" href="' + esc(s.url) + '" target="_blank" rel="noopener">' + htm("console.list.openSite") + '</a>' +
+        '<a class="btn primary" href="' + esc(s.adminUrl) + '" target="_blank" rel="noopener">' + htm("console.list.openAdmin") + '</a>'
       : "";
-    const noUrl = s.status === "ready" && !s.url ? '<p class="muted">No public address is configured for this site yet.</p>' : "";
+    const noUrl = s.status === "ready" && !s.url ? '<p class="muted">' + htm("console.list.noUrl") + '</p>' : "";
     const err = s.error ? '<p class="errtext">' + esc(s.error) + '</p>' : "";
     const appearance = s.status === "ready" && !suspended && (s.role === "owner" || staff) && themed
-      ? '<a class="btn" href="/sites/' + esc(s.slug) + '/appearance">Appearance</a>' : "";
-    const retry = s.canRetry ? '<button class="btn" data-retry="' + esc(s.slug) + '">Retry setup</button>' : "";
-    const del = s.role === "owner" ? '<button class="btn danger" data-delete="' + esc(s.slug) + '" data-name="' + esc(s.name) + '">Delete</button>' : "";
-    const note = suspended ? '<p class="errtext">This site is suspended. Contact support to restore it.</p>' : "";
-    return '<article class="card"><div class="row"><h2>' + esc(s.name) + '</h2>' + (suspended ? '<span class="pill failed">suspended</span>' : status(s.status)) + '</div>' + note +
-      '<p class="muted"><code>' + esc(s.slug) + '</code> \u00b7 ' + esc(s.role) + (s.theme ? ' \u00b7 ' + esc(s.theme) : '') + '</p>' + err + noUrl +
+      ? '<a class="btn" href="/sites/' + esc(s.slug) + '/appearance">' + htm("console.list.appearance") + '</a>' : "";
+    const retry = s.canRetry ? '<button class="btn" data-retry="' + esc(s.slug) + '">' + htm("console.list.retry") + '</button>' : "";
+    const del = s.role === "owner" ? '<button class="btn danger" data-delete="' + esc(s.slug) + '" data-name="' + esc(s.name) + '">' + htm("console.list.delete") + '</button>' : "";
+    const note = suspended ? '<p class="errtext">' + htm("console.list.suspended") + '</p>' : "";
+    return '<article class="card"><div class="row"><h2>' + esc(s.name) + '</h2>' + (suspended ? '<span class="pill failed">' + htm("console.status.suspended") + '</span>' : status(s.status)) + '</div>' + note +
+      '<p class="muted"><code>' + esc(s.slug) + '</code> \u00b7 ' + known("console.role.", s.role) + (s.theme ? ' \u00b7 ' + esc(s.theme) : '') + '</p>' + err + noUrl +
       '<div class="actions">' + open + appearance + retry + del + '</div></article>';
   };
 
@@ -57,32 +69,32 @@ const CLIENT_JS = String.raw`
   const loadList = async () => {
     const r = await getJson("/api/multisite/me");
     if (r.status === 401) return toLogin();
-    if (!r.ok) { root.innerHTML = '<div class="err">Could not load your sites.</div>'; return; }
+    if (!r.ok) { root.innerHTML = '<div class="err">' + htm("console.list.loadFailed") + '</div>'; return; }
     const me = r.body;
     renderNav(me);
     const atLimit = me.max != null && me.owned >= me.max;
     const banner = !me.emailVerified
-      ? '<div class="note">Verify your email address to create sites. Check your inbox for the verification link.</div>' : "";
+      ? '<div class="note">' + htm("console.list.verifyEmail") + '</div>' : "";
     const create = atLimit
-      ? '<p class="muted">You own ' + me.owned + ' of ' + me.max + ' sites. That is the limit.</p>'
-      : '<a class="btn primary" href="/sites/new"' + (me.emailVerified ? "" : ' aria-disabled="true" tabindex="-1"') + '>Create site</a>';
+      ? '<p class="muted">' + esc(txtn("console.list.atLimit", me.max, { owned: me.owned, max: me.max })) + '</p>'
+      : '<a class="btn primary" href="/sites/new"' + (me.emailVerified ? "" : ' aria-disabled="true" tabindex="-1"') + '>' + htm("console.list.create") + '</a>';
     root.innerHTML = banner +
-      '<div class="row head"><h1>My sites</h1><div>' + create + '</div></div>' +
+      '<div class="row head"><h1>' + htm("console.list.title") + '</h1><div>' + create + '</div></div>' +
       (me.sites.length
         ? '<div class="grid">' + me.sites.map((s) => siteCard(s, me.staff, me.themed)).join("") + '</div>'
-        : '<div class="empty"><p>You have no sites yet.</p></div>');
+        : '<div class="empty"><p>' + htm("console.list.empty") + '</p></div>');
     root.querySelectorAll("[data-retry]").forEach((b) => b.addEventListener("click", async () => {
-      b.disabled = true; b.textContent = "Starting\u2026";
+      b.disabled = true; b.textContent = txt("console.list.retrying");
       await getJson("/api/multisite/sites/" + b.dataset.retry + "/retry", { method: "POST", headers: { "x-emdash-request": "1" } });
       loadList();
     }));
     root.querySelectorAll("[data-delete]").forEach((b) => b.addEventListener("click", async () => {
-      if (!confirm('Delete "' + b.dataset.name + '"? The site goes offline now. Support can restore it for a limited time.')) return;
+      if (!confirm(txt("console.list.deleteConfirm", { name: b.dataset.name }))) return;
       b.disabled = true;
       const res = await getJson("/api/multisite/sites/" + b.dataset.delete + "/state", {
         method: "POST", headers: { "content-type": "application/json", "x-emdash-request": "1" }, body: JSON.stringify({ action: "delete" }),
       });
-      if (!res.ok) { alert((res.body && (res.body.message || res.body.code)) || "Could not delete the site."); b.disabled = false; return; }
+      if (!res.ok) { alert((res.body && (res.body.message || res.body.code)) || txt("console.list.deleteFailed")); b.disabled = false; return; }
       loadList();
     }));
     clearTimeout(timer);
@@ -97,33 +109,33 @@ const CLIENT_JS = String.raw`
     const me = r.body || {};
     renderNav(me);
     if (!me.emailVerified) {
-      root.innerHTML = '<div class="note">Verify your email address before creating a site.</div><p><a href="/sites">Back to my sites</a></p>';
+      root.innerHTML = '<div class="note">' + htm("console.wizard.verifyEmail") + '</div><p><a href="/sites">' + htm("console.wizard.backToSites") + '</a></p>';
       return;
     }
     if (me.max != null && me.owned >= me.max) {
-      root.innerHTML = '<div class="note">You own ' + me.owned + ' of ' + me.max + ' sites. That is the limit.</div><p><a href="/sites">Back to my sites</a></p>';
+      root.innerHTML = '<div class="note">' + esc(txtn("console.list.atLimit", me.max, { owned: me.owned, max: me.max })) + '</div><p><a href="/sites">' + htm("console.wizard.backToSites") + '</a></p>';
       return;
     }
     const tr = await getJson("/api/multisite/themes");
     const themes = (tr.body && tr.body.themes) || [];
     const picker = themes.length > 1
-      ? '<fieldset class="themes"><legend>Theme</legend>' + themes.map((t) =>
+      ? '<fieldset class="themes"><legend>' + htm("console.wizard.theme") + '</legend>' + themes.map((t) =>
           '<label class="theme"><input type="radio" name="theme" value="' + esc(t.id) + '"' + (t.id === tr.body.default ? " checked" : "") + '>' +
           '<span><strong>' + esc(t.name) + '</strong><small>' + esc(t.description) + '</small>' +
-          (/^https:\/\//.test(t.demoUrl || "") ? '<small><a href="' + esc(t.demoUrl) + '" target="_blank" rel="noopener">Preview \u2197</a></small>' : '') + '</span></label>').join("") + '</fieldset>'
+          (/^https:\/\//.test(t.demoUrl || "") ? '<small><a href="' + esc(t.demoUrl) + '" target="_blank" rel="noopener">' + htm("console.wizard.preview") + '</a></small>' : '') + '</span></label>').join("") + '</fieldset>'
       : "";
     root.innerHTML =
-      '<h1>Create a site</h1>' +
+      '<h1>' + htm("console.wizard.title") + '</h1>' +
       '<form id="f" novalidate>' +
-      '<label for="name">Site name</label>' +
+      '<label for="name">' + htm("console.wizard.name") + '</label>' +
       '<input id="name" name="name" autocomplete="off" maxlength="80" required>' +
-      '<label for="slug">Address</label>' +
+      '<label for="slug">' + htm("console.wizard.address") + '</label>' +
       '<div class="addr"><input id="slug" name="slug" autocomplete="off" maxlength="40" required aria-describedby="slugmsg">' +
       '<span class="muted" id="suffix"></span></div>' +
       '<p id="slugmsg" class="muted" aria-live="polite"></p>' + picker +
       '<p id="formerr" class="errtext" role="alert"></p>' +
-      '<button class="btn primary" id="go" type="submit" disabled>Create site</button> ' +
-      '<a class="btn" href="/sites">Cancel</a>' +
+      '<button class="btn primary" id="go" type="submit" disabled>' + htm("console.wizard.submit") + '</button> ' +
+      '<a class="btn" href="/sites">' + htm("console.wizard.cancel") + '</a>' +
       '</form>';
     const name = document.getElementById("name"), slug = document.getElementById("slug");
     const msg = document.getElementById("slugmsg"), go = document.getElementById("go"), ferr = document.getElementById("formerr");
@@ -132,14 +144,14 @@ const CLIENT_JS = String.raw`
       ok = false; go.disabled = true;
       clearTimeout(t);
       if (!slug.value) { msg.textContent = ""; return; }
-      msg.textContent = "Checking\u2026";
+      msg.textContent = txt("console.wizard.checking");
       t = setTimeout(async () => {
         const mine = ++seq;
         const c = await getJson("/api/multisite/slug-check?slug=" + encodeURIComponent(slug.value));
         if (mine !== seq) return;
         ok = !!(c.body && c.body.available);
         msg.className = ok ? "okmsg" : "errtext";
-        msg.textContent = ok ? "Available." : ((c.body && c.body.message) || "Not available.");
+        msg.textContent = ok ? txt("console.wizard.available") : ((c.body && c.body.message) || txt("console.wizard.unavailable"));
         go.disabled = !(ok && name.value.trim());
       }, 300);
     };
@@ -155,7 +167,7 @@ const CLIENT_JS = String.raw`
           themes.length > 1 ? { metadata: { theme: (document.querySelector('input[name="theme"]:checked') || {}).value } } : {})),
       });
       if (!res.ok) {
-        ferr.textContent = (res.body && (res.body.message || res.body.code)) || ("Could not create the site (HTTP " + res.status + ").");
+        ferr.textContent = (res.body && (res.body.message || res.body.code)) || txt("console.wizard.createFailed", { status: res.status });
         go.disabled = false; return;
       }
       progress(slug.value, name.value.trim());
@@ -163,8 +175,8 @@ const CLIENT_JS = String.raw`
   };
 
   const progress = (slug, name) => {
-    root.innerHTML = '<h1>Setting up ' + esc(name) + '\u2026</h1>' +
-      '<p class="muted" role="status" aria-live="polite" id="ps">This takes about half a minute.</p>';
+    root.innerHTML = '<h1>' + htm("console.progress.title", { name: esc(name) }) + '</h1>' +
+      '<p class="muted" role="status" aria-live="polite" id="ps">' + htm("console.progress.duration") + '</p>';
     const ps = document.getElementById("ps");
     let tries = 0;
     const tick = async () => {
@@ -174,21 +186,21 @@ const CLIENT_JS = String.raw`
       if (st === "ready") {
         const me = (await getJson("/api/multisite/me")).body || { sites: [] };
         const s = me.sites.find((x) => x.slug === slug);
-        root.innerHTML = '<h1>' + esc(name) + ' is ready</h1>' +
+        root.innerHTML = '<h1>' + htm("console.progress.ready", { name: esc(name) }) + '</h1>' +
           '<div class="actions">' +
-          (s && s.adminUrl ? '<a class="btn primary" href="' + esc(s.adminUrl) + '">Open admin</a>' : '') +
-          (s && s.url ? '<a class="btn" href="' + esc(s.url) + '">Open site</a>' : '') +
-          '<a class="btn" href="/sites">My sites</a></div>';
+          (s && s.adminUrl ? '<a class="btn primary" href="' + esc(s.adminUrl) + '">' + htm("console.list.openAdmin") + '</a>' : '') +
+          (s && s.url ? '<a class="btn" href="' + esc(s.url) + '">' + htm("console.list.openSite") + '</a>' : '') +
+          '<a class="btn" href="/sites">' + htm("console.progress.mySites") + '</a></div>';
         return;
       }
       if (st === "failed") {
-        root.innerHTML = '<h1>Setup did not finish</h1><p class="errtext">' + esc(r.body.error || "") + '</p>' +
-          '<p><a class="btn primary" href="/sites">Go to my sites to retry</a></p>';
+        root.innerHTML = '<h1>' + htm("console.progress.failed") + '</h1><p class="errtext">' + esc(r.body.error || "") + '</p>' +
+          '<p><a class="btn primary" href="/sites">' + htm("console.progress.retry") + '</a></p>';
         return;
       }
-      const labels = { queued: "Waiting for a free slot\u2026", tables: "Creating your site\u2026", content: "Adding starter content\u2026", identity: "Setting up your account\u2026" };
-      if (st === "provisioning" && r.body.step && labels[r.body.step]) ps.textContent = labels[r.body.step];
-      if (tries > 90) { ps.textContent = "Still working. You can leave this page and check My sites."; return; }
+      const step = r.body && r.body.step && MSG["console.progress.step." + r.body.step] != null ? "console.progress.step." + r.body.step : null;
+      if (st === "provisioning" && step) ps.textContent = txt(step);
+      if (tries > 90) { ps.textContent = txt("console.progress.slow"); return; }
       setTimeout(tick, 2500);
     };
     tick();
@@ -201,20 +213,20 @@ const CLIENT_JS = String.raw`
     if (r.status === 401) return toLogin();
     const me = (await getJson("/api/multisite/me")).body || {};
     renderNav(me);
-    if (!r.ok) { root.innerHTML = '<div class="err">You cannot change this site\u2019s appearance.</div><p><a href="/sites">Back to my sites</a></p>'; return; }
+    if (!r.ok) { root.innerHTML = '<div class="err">' + htm("console.appearance.forbidden") + '</div><p><a href="/sites">' + htm("console.wizard.backToSites") + '</a></p>'; return; }
     const a = r.body;
     const list = (xs) => xs.map((x) => '<code>' + esc(x) + '</code>').join(", ");
     root.innerHTML =
-      '<h1>Appearance \u00b7 ' + esc(a.name) + '</h1>' +
-      '<p class="muted">Switching keeps all of your content. Anything the new theme does not show is hidden, and comes back if you switch back.</p>' +
-      '<form id="f"><fieldset class="themes"><legend>Theme</legend>' + a.themes.map((t) =>
+      '<h1>' + htm("console.appearance.title", { name: esc(a.name) }) + '</h1>' +
+      '<p class="muted">' + htm("console.appearance.intro") + '</p>' +
+      '<form id="f"><fieldset class="themes"><legend>' + htm("console.wizard.theme") + '</legend>' + a.themes.map((t) =>
         '<label class="theme"><input type="radio" name="theme" value="' + esc(t.id) + '"' + (t.current ? " checked" : "") + '>' +
-        '<span><strong>' + esc(t.name) + (t.current ? ' (current)' : '') + '</strong><small>' + esc(t.description) + '</small>' +
-        (!t.current && t.adds.length ? '<small>Adds: ' + list(t.adds) + '</small>' : '') +
-        (!t.current && t.hides.length ? '<small>Hides: ' + list(t.hides) + '</small>' : '') + '</span></label>').join("") + '</fieldset>' +
-      '<label class="check"><input type="checkbox" id="sample"> Add sample content for any new sections</label>' +
+        '<span><strong>' + (t.current ? htm("console.appearance.current", { name: esc(t.name) }) : esc(t.name)) + '</strong><small>' + esc(t.description) + '</small>' +
+        (!t.current && t.adds.length ? '<small>' + htm("console.appearance.adds", { list: list(t.adds) }) + '</small>' : '') +
+        (!t.current && t.hides.length ? '<small>' + htm("console.appearance.hides", { list: list(t.hides) }) + '</small>' : '') + '</span></label>').join("") + '</fieldset>' +
+      '<label class="check"><input type="checkbox" id="sample"> ' + htm("console.appearance.sample") + '</label>' +
       '<p id="msg" class="muted" role="status" aria-live="polite"></p>' +
-      '<button class="btn primary" id="go" type="submit" disabled>Switch theme</button> <a class="btn" href="/sites">Back</a></form>';
+      '<button class="btn primary" id="go" type="submit" disabled>' + htm("console.appearance.submit") + '</button> <a class="btn" href="/sites">' + htm("console.appearance.back") + '</a></form>';
     const go = document.getElementById("go"), msg = document.getElementById("msg");
     const chosen = () => (document.querySelector('input[name="theme"]:checked') || {}).value;
     root.querySelectorAll('input[name="theme"]').forEach((i) => i.addEventListener("change", () => { go.disabled = chosen() === a.current; }));
@@ -222,18 +234,18 @@ const CLIENT_JS = String.raw`
       e.preventDefault();
       const to = chosen();
       if (!to || to === a.current) return;
-      go.disabled = true; msg.className = "muted"; msg.textContent = "Switching\u2026";
+      go.disabled = true; msg.className = "muted"; msg.textContent = txt("console.appearance.switching");
       const res = await getJson("/api/multisite/sites/" + slug + "/theme", {
         method: "POST", headers: { "content-type": "application/json", "x-emdash-request": "1" },
         body: JSON.stringify({ theme: to, includeContent: document.getElementById("sample").checked }),
       });
-      if (!res.ok) { msg.className = "errtext"; msg.textContent = (res.body && (res.body.message || res.body.code)) || "Could not switch."; go.disabled = false; return; }
+      if (!res.ok) { msg.className = "errtext"; msg.textContent = (res.body && (res.body.message || res.body.code)) || txt("console.appearance.failed"); go.disabled = false; return; }
       let tries = 0;
       const poll = async () => {
         tries++;
         const p = await getJson("/api/multisite/sites/" + slug + "/appearance");
         if (p.ok && p.body.current === to) { loadAppearance(); return; }
-        if (tries > 40) { msg.className = "errtext"; msg.textContent = "This is taking longer than expected. Check back in a minute."; return; }
+        if (tries > 40) { msg.className = "errtext"; msg.textContent = txt("console.appearance.slow"); return; }
         setTimeout(poll, 2000);
       };
       poll();
@@ -300,18 +312,22 @@ const STYLE = String.raw`
   label.theme small { display: block; color: light-dark(#6b7280, #9aa0a6); }
 `;
 
+/** The client script's messages, as JSON safe inside a <script> element. */
+const clientMessages = (): string => JSON.stringify(messagesFor("console.")).replace(/</g, "\\u003c");
+
 export function consolePageHtml(mode: "list" | "new" | "appearance", slug = ""): string {
 	return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>${mode === "new" ? "Create a site" : mode === "appearance" ? "Appearance" : "My sites"}</title>
+<title>${tHtml(mode === "new" ? "console.page.title.new" : mode === "appearance" ? "console.page.title.appearance" : "console.page.title.list")}</title>
 <style>${STYLE}</style>
 </head>
 <body data-mode="${mode}" data-slug="${slug.replace(/[^a-z0-9-]/g, "")}">
-<header><strong>Sites</strong><nav id="nav" aria-label="Main"></nav></header>
-<main><div id="root"><p class="muted">Loading\u2026</p></div></main>
+<header><strong>${tHtml("console.page.brand")}</strong><nav id="nav" aria-label="${tHtml("console.page.navLabel")}"></nav></header>
+<main><div id="root"><p class="muted">${tHtml("console.page.loading")}</p></div></main>
+<script type="application/json" id="multisite-i18n">${clientMessages()}</script>
 <script>${CLIENT_JS}</script>
 </body>
 </html>`;

@@ -7,6 +7,14 @@ contain breaking changes).
 
 ## [Unreleased]
 
+### Changed
+- **User-facing strings moved to a catalog** (`src/i18n.ts`, English only), groundwork for
+  translations (#3). Console, account "Sites" tab, Fleet, the site's admin page, status and
+  handoff pages, sign-in links, the demo strip and the API error messages people read now go
+  through `t(key, params)` / `tn(base, count)` with `{named}` placeholders. The console page
+  embeds only the `console.*` messages as JSON for its client script. No visible change: the
+  rendered text and HTML are the same. New self-check: `scripts/i18n.selfcheck.ts`.
+
 ### Fixed
 - Self-checks aligned with EmDash 1.4.0: dropped the dead taxonomy holder cache keys
   (`emdash:taxonomy-defs@2`, `emdash:taxonomy-names`, now the `:swr` variants), and the
