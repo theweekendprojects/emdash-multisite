@@ -20,7 +20,12 @@ import { Button, Card, Chip, Input, ProgressBar, Skeleton, buttonVariants } from
 // @ts-ignore - provided by the host (peer dependency)
 import * as React from "react";
 // `txt`, not `t`: this file already uses `t` (looks, timers) and `msg` (ChangeLook state) as local names.
-import { t as txt, tn, type MessageKey } from "./i18n.ts";
+import { matchLocale, resolveLocale, setLocale, t as txt, tn, type MessageKey } from "./i18n.ts";
+// @ts-ignore - Astro virtual module (i18n is undefined when the host configures no i18n)
+import { i18n as astroI18n } from "astro:config/client";
+
+// Until /api/multisite/me answers (it carries the deployment's locale), use the Astro i18n default.
+setLocale(resolveLocale(undefined, (astroI18n as { defaultLocale?: string } | undefined)?.defaultLocale));
 
 interface MySite {
 	slug: string;
@@ -46,6 +51,8 @@ interface Me {
 	plan: string | null;
 	/** Billing is on, so the Upgrade link resolves (otherwise /account/billing 404s). */
 	canUpgrade: boolean;
+	/** The deployment's locale (`SitesConfig.locale` or the i18n default). */
+	locale?: string;
 }
 interface Look {
 	id: string;
@@ -345,6 +352,8 @@ function SitesTab() {
 		const r = await api("/api/multisite/me");
 		if (r.status === 404) return setTenant(true);
 		if (!r.ok) return setFailed(true);
+		const locale = matchLocale(r.body.locale);
+		if (locale) setLocale(locale);
 		setMe(r.body);
 		if (r.body.sites.some((s: MySite) => s.status === "provisioning")) timer.current = setTimeout(load, 3000);
 	}, []);

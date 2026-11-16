@@ -1,5 +1,6 @@
 import { isSiteId } from "./rewrite.ts";
 import { THEME_ID, isLocalPath, type Limits, type Themes } from "./rules.ts";
+import { LOCALES, matchLocale } from "./i18n.ts";
 
 /** Serializable (lives in the build-time database descriptor). */
 export interface SitesConfig {
@@ -47,6 +48,12 @@ export interface SitesConfig {
 	 * bound. Today every site still lives in the descriptor's database (see `shardOf`): this only makes the pool reachable.
 	 */
 	shards?: string[];
+	/**
+	 * Language of the console, Fleet, the site admin page, status pages and API messages, e.g. `"fr"`.
+	 * Defaults to the EmDash (Astro) i18n default locale, then English. One language per deployment:
+	 * it is never negotiated from the request.
+	 */
+	locale?: string;
 }
 
 /** A Worker binding name, as wrangler accepts it. */
@@ -62,6 +69,9 @@ export function assertSitesConfig(c: SitesConfig): void {
 	}
 	if (c.defaultTheme && !Object.hasOwn(c.themes ?? {}, c.defaultTheme)) {
 		throw new Error(`[multisite] defaultTheme "${c.defaultTheme}" is not in themes`);
+	}
+	if (c.locale !== undefined && !matchLocale(c.locale)) {
+		throw new Error(`[multisite] locale "${c.locale}" has no catalog (available: ${LOCALES.join(", ")})`);
 	}
 	if (c.appUrl !== undefined && !/^https?:\/\/[^/\s]+$/.test(c.appUrl)) throw new Error("[multisite] appUrl must be an origin like https://app.example.com (no path)");
 	if (c.deleteGraceDays !== undefined && (!Number.isInteger(c.deleteGraceDays) || c.deleteGraceDays < 0)) {

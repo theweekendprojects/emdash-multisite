@@ -41,7 +41,8 @@ import { sitesConfig } from "./config.ts";
 import { safeNext, signHandoff, verifyHandoff } from "./handoff.ts";
 import { purgeSite } from "./purge.ts";
 import { siteUrl } from "./sites.ts";
-import { t, tHtml, tn } from "./i18n.ts";
+import { getLocale, t, tHtml, tn } from "./i18n.ts";
+import { initLocale } from "./locale.ts";
 import { sql } from "kysely";
 import { getDb } from "emdash/runtime";
 import { effectiveLimits, TEMPLATE_PREFIX, demoBannerHtml, demoGuard, isTemplateId, lostLimitRace, SIGNUP_PATH, emailDomainBlocked, DEFAULT_DELETE_GRACE_DAYS, DEFAULT_LIMITS, DEFAULT_POST_LOGIN_PATH, csrfOk, isPurgeDue, loginEntryRedirect, transition, type SiteState, type StateAction, createProblem, needsReconcile, effectiveTheme, isThemeRouteRequest, isThemed, themeFromMetadata, themeProblem, themeRoute } from "./rules.ts";
@@ -92,7 +93,7 @@ const forbidden = () => new Response(JSON.stringify({ code: "CSRF", message: "Mi
 });
 const html = (body: string, status: number) =>
 	new Response(body, { status, headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
-const notFoundPage = () => html(`<!doctype html><meta charset=utf-8><title>${tHtml("status.notFound")}</title><h1>${tHtml("status.notFound")}</h1>`, 404);
+const notFoundPage = () => html(`<!doctype html><html lang="${getLocale()}"><meta charset=utf-8><title>${tHtml("status.notFound")}</title><h1>${tHtml("status.notFound")}</h1>`, 404);
 
 /** The signed-in EmDash user id, or null. Set by emdash-better-auth as session "user" = { id }. */
 async function sessionUserId(ctx: Ctx): Promise<string | null> {
@@ -236,14 +237,14 @@ async function serveDemo(ctx: Ctx, sites: SitesConfig, site: string, next: Next)
 function unavailable(state: SiteState): Response {
 	return state.state === "deleted"
 		? notFoundPage()
-		: html(`<!doctype html><meta charset=utf-8><title>${tHtml("status.unavailable.title")}</title><h1>${tHtml("status.unavailable.heading")}</h1><p>${tHtml("status.unavailable.text")}</p>`, 503);
+		: html(`<!doctype html><html lang="${getLocale()}"><meta charset=utf-8><title>${tHtml("status.unavailable.title")}</title><h1>${tHtml("status.unavailable.heading")}</h1><p>${tHtml("status.unavailable.text")}</p>`, 503);
 }
 
 const HANDOFF_PATH = "/_multisite/handoff";
 const noStore = { "cache-control": "no-store", "referrer-policy": "no-referrer" };
 const redirectTo = (location: string) => new Response(null, { status: 302, headers: { location, ...noStore } });
 const handoffFailed = () =>
-	html(`<!doctype html><meta charset=utf-8><title>${tHtml("handoff.expired.title")}</title><p>${tHtml("handoff.expired.text")}</p>`, 403);
+	html(`<!doctype html><html lang="${getLocale()}"><meta charset=utf-8><title>${tHtml("handoff.expired.title")}</title><p>${tHtml("handoff.expired.text")}</p>`, 403);
 
 /**
  * Tenant side of "Open admin": check the signed link the control plane made,
@@ -265,6 +266,7 @@ async function acceptHandoff(ctx: Ctx, site: string): Promise<Response> {
  * the site's cached pages after an admin write that changes a public page but has no plugin hook (menus, settings, ...).
  */
 export async function onRequest(context: Ctx, next: Next): Promise<Response> {
+	initLocale();
 	const { method } = context.request;
 	const edit = classifyEdit(method, context.url.pathname);
 	// The body can be read only once: peek at a clone before the route consumes it. Only content saves need it.

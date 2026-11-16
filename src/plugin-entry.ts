@@ -22,6 +22,7 @@ import { runFleetAction } from "./fleet-actions.ts";
 import { PURGE_FORM_ACTION, fleetBlocks, parseFleetAction } from "./fleet-blocks.ts";
 import { isSiteId } from "./rewrite.ts";
 import { t } from "./i18n.ts";
+import { initLocale } from "./locale.ts";
 
 
 interface Interaction {
@@ -91,6 +92,7 @@ async function buildPage(toast?: Page["toast"]): Promise<Page> {
 }
 
 export function createPlugin() {
+	initLocale(); // the admin menu label below is read once, at definition time
 	return definePlugin({
 		id: PLUGIN_ID,
 		version: PLUGIN_VERSION,
