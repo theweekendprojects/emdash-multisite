@@ -24,7 +24,31 @@ Then merge the two printed snippets and deploy. The step-by-step is in
 
 ---
 
+## What it is, and what it isn't
+
+**It is:**
+- An engine for running many independent EmDash sites from one codebase, one Cloudflare Worker
+  and one D1 database.
+- A subdomain, content, users and roles per site.
+- A package you add to an existing EmDash + Cloudflare app. It is on npm under the MIT license.
+- Built on EmDash's own extension points (`database:`, `vite.plugins`, `middleware.outer`), so
+  EmDash core is not forked.
+
+**It isn't:**
+- **A shared admin.** Users belong to each site, so one login does not edit every site.
+- **Per-site database isolation.** All sites share one D1 database and are separated by table
+  names.
+- **Workers for Platforms.** Every site runs inside the same Worker, not its own.
+- **A hosting company.** [Host My EmDash](https://hostmyemdash.com) is a separate managed service
+  built on top of it.
+- **A registry plugin.** It is wired in through configuration, not installed like one.
+
+Background and the design discussion:
+[blog post](https://theweekendprojects.com/posts/emdash-multisite) ·
+[EmDash Discussion #4590](https://github.com/emdash-cms/emdash/discussions/4590).
+
 ## Table of contents
+- [What it is, and what it isn't](#what-it-is-and-what-it-isnt)
 - [How it works (30 seconds)](#how-it-works-30-seconds)
 - [Requirements](#requirements)
 - [Installing](#installing)
