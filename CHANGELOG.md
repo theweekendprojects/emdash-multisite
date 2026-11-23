@@ -7,6 +7,8 @@ contain breaking changes).
 
 ## [Unreleased]
 
+## [0.8.1] - 2026-11-23
+
 ### Added
 - **French translation** (#3). New `locale` option in `SitesConfig` (`"en"` or `"fr"`), defaulting
   to the Astro/EmDash `i18n.defaultLocale`, then English. Build-time only, never read from the
