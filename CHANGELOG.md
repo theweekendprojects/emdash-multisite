@@ -10,6 +10,8 @@ contain breaking changes).
 ### Fixed
 - **Byline cache purges ran on EmDash 1.6.** The plugin declared `byline:afterSave` and `byline:afterDelete` without the `bylines:read` capability, so core skipped both hooks and byline edits did not purge cached pages. The capability is now declared.
 
+## [0.8.2] - 2026-11-23
+
 ## [0.8.1] - 2026-11-23
 
 ### Added
