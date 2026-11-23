@@ -95,9 +95,18 @@ function isFtsColumn(toks: string[], i: number, next: string | undefined): boole
 	return /^(?:bm25|snippet|highlight)$/i.test(toks[j] ?? "");
 }
 
+/**
+ * Core builds a table name at run time: `name = ? || c.slug` and `pragma_table_info(? || c.slug)`
+ * (fts-manager: search metadata and index repair, emdash 1.6). The `?` is a name prefix, so
+ * rewriteParams leaves it alone and the suffix must go on the concatenated result. Without this the
+ * FTS table is never found and every search on a non-primary site returns nothing.
+ */
+const RUNTIME_NAME = /\?(\s*\|\|\s*c\.slug)\b/g;
+
 /** Rewrite every table/index/trigger identifier in `sql` for a non-primary site. */
 export function rewriteSql(sql: string, suffix: string): string {
 	if (!suffix) return sql;
+	if (isIntrospection(sql)) sql = sql.replace(RUNTIME_NAME, (_m, rest: string) => `?${rest} || '${suffix}'`);
 	const head = /^\s*(?:CREATE|DROP)\s+(?:TEMP(?:ORARY)?\s+)?(?:UNIQUE\s+)?(INDEX|TRIGGER)\b/i.exec(sql);
 	let objectNamePending = head !== null;
 	// In CREATE TRIGGER the table follows ON (`AFTER INSERT ON t WHEN ...`); in

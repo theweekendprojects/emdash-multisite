@@ -14,6 +14,11 @@ contain breaking changes).
   and API error messages follow it; `<html lang>` on the console and status pages follows it too.
   French catalog in `src/i18n-fr.ts`.
 
+### Fixed
+- **Compatible with EmDash 1.6.0.** Search on non-primary sites returned nothing: core builds the
+  FTS table name at run time (`"_emdash_fts_" || c.slug`), and the rewrite now suffixes it. Per-site
+  cache patch classifies the new 1.6 keys and handles the `getLocks()` helper, with the `.v2` lock names.
+  The selfchecks cover both.
 ### Changed
 - **User-facing strings moved to a catalog** (`src/i18n.ts`, English only), groundwork for
   translations (#3). Console, account "Sites" tab, Fleet, the site's admin page, status and

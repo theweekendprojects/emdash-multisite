@@ -45,8 +45,9 @@ export const SLOT_KEYS = [
 	"@emdash-cms/core/secrets-cache@2",
 	// Per-key promise locks for media-usage refreshes; two sites sharing a collection name
 	// ("posts") would otherwise serialise behind, or inherit failures from, each other.
-	"emdash.mediaUsage.contentLocks",
-	"emdash.mediaUsage.collectionLocks",
+	// emdash 1.6.0 bumped these to .v2 (same shape, same Map-on-globalThis slot).
+	"emdash.mediaUsage.contentLocks.v2",
+	"emdash.mediaUsage.collectionLocks.v2",
 	// Synonyms come from the site's own KV settings.
 	"emdash.ai-search.synonym-cache",
 ] as const;
@@ -118,6 +119,11 @@ export const SITE_INDEPENDENT_KEYS: Readonly<Record<string, string>> = {
 	"emdash:sandbox-content-create-callbacks": "sandboxed plugins unsupported in v1",
 	"emdash:sandbox-taxonomy-write-callbacks": "sandboxed plugins unsupported in v1",
 	"emdash:sandbox-content-action-callbacks": "sandboxed plugins unsupported in v1",
+	// emdash 1.6.0: per-request stash on App.Locals (middleware), not a process-wide cache.
+	"emdash:anonymous-render": "per-request stash on App.Locals (emdash 1.6.0)",
+	// emdash 1.6.0: WeakMap keyed by the Kysely handle (`this.db`), read as `runtime.db`.
+	// Request-scoped handles are per site, so entries never cross sites. Holds generation numbers only.
+	"emdash.plugin-state-generation-receipts": "WeakMap keyed by the per-request db handle (emdash 1.6.0)",
 };
 
 // Every Symbol.for key owned by EmDash code: "emdash:..", "emdash.x.y" and "@emdash-cms/..".
@@ -175,6 +181,7 @@ function patchHolder(code: string, key: string, id: string): string {
 function patchSlots(code: string, keys: string[], id: string): string {
 	// alias declaration offset -> keys read through it
 	const byDecl = new Map<number, { alias: string; keys: Set<string> }>();
+	const helperKeys: string[] = [];
 	for (const key of keys) {
 		const consts = keyConsts(code, key);
 		if (consts.length === 0) {
@@ -200,7 +207,8 @@ function patchSlots(code: string, keys: string[], id: string): string {
 				byDecl.set(best, entry);
 			}
 		}
-		if (!used) throw new Error(`[multisite] cannot patch cache "${key}" in ${id}: no slot access found.`);
+		// No `alias[KEY]` access: core reads the key through a helper (see patchLockHelpers).
+		if (!used) helperKeys.push(key);
 	}
 	// Apply from the end so earlier offsets stay valid.
 	let out = code;
@@ -212,7 +220,36 @@ function patchSlots(code: string, keys: string[], id: string): string {
 		const replacement = `${m[1]}__siteGlobal(${JSON.stringify([...ks])});`;
 		out = out.slice(0, offset) + replacement + out.slice(offset + m[0].length);
 	}
-	return out;
+	return helperKeys.length > 0 ? patchLockHelpers(out, helperKeys, id) : out;
+}
+
+/**
+ * emdash 1.6.0 reads the media-usage lock slots through a helper, not by name:
+ *   function getLocks(symbol) { const global = globalThis; const existing = global[symbol]; ... }
+ * Give that helper's `globalThis` alias a siteGlobal over the listed keys. The
+ * helper must be the only one that reads them, and it must match this shape
+ * exactly, otherwise the build fails.
+ */
+function patchLockHelpers(code: string, keys: string[], id: string): string {
+	// Matches the dist form and the TypeScript source form (typed params, `as` cast on the alias).
+	const helperRe =
+		/function (\w+)\((\w+)(?:: [^)]*)?\)(?:: [^{]*)? \{\n\s*const (\w+) = globalThis(?: as [^;\n]+)?;\n\s*const \w+ = \3\[\2\];/g;
+	const helpers = [...code.matchAll(helperRe)];
+	if (helpers.length !== 1) {
+		throw new Error(
+			`[multisite] cannot patch cache "${keys.join('", "')}" in ${id}: expected one globalThis lock helper, found ${helpers.length}. ` +
+				`EmDash core changed; update patchLockHelpers in emdash-multisite/src/vite.ts.`,
+		);
+	}
+	const [whole, name, , alias] = helpers[0]!;
+	// The helper must be called with every listed key's symbol, or the patch would scope nothing.
+	const called = keys.filter((k) => keyConsts(code, k).some((c) => new RegExp(`\\b${name}\\(${c}\\)`).test(code)));
+	if (called.length !== keys.length) {
+		throw new Error(`[multisite] cannot patch cache "${keys.join('", "')}" in ${id}: ${name}() is not called with each key.`);
+	}
+	const aliasDecl = new RegExp(`const ${alias} = globalThis(?: as [^;\\n]+)?;`);
+	const patched = whole!.replace(aliasDecl, `const ${alias} = __siteGlobal(${JSON.stringify(keys)});`);
+	return code.replace(whole!, patched);
 }
 
 /**

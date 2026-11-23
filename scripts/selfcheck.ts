@@ -43,6 +43,17 @@ eq(
 eq("a column that only looks like a table is left alone", rewriteSql("SELECT users FROM ec_posts WHERE x = 1", S), "SELECT users FROM `ec_posts$acme` WHERE x = 1");
 eq("pragma table fn", rewriteSql("SELECT name FROM pragma_table_info('ec_posts')", S), `SELECT name FROM pragma_table_info('ec_posts$acme')`);
 eq("primary is identity", rewriteSql("SELECT * FROM ec_posts", ""), "SELECT * FROM ec_posts");
+// fts-manager (emdash 1.6): the FTS table name is built at run time from a prefix param and c.slug.
+eq(
+	"runtime FTS table name gets the suffix (search metadata + index repair)",
+	rewriteSql("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? || c.slug", S),
+	"SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? || c.slug || '$acme'",
+);
+eq(
+	"runtime pragma name gets the suffix",
+	rewriteSql("SELECT name FROM pragma_table_info(? || c.slug)", S),
+	"SELECT name FROM pragma_table_info(? || c.slug || '$acme')",
+);
 eq("sqlite_ internals shared", isSiteTable("sqlite_sequence"), false);
 eq("host: wildcard", resolveSite("acme.example.com", { primary: "main", wildcard: "example.com" }), "acme");
 eq("host: unknown -> primary", resolveSite("localhost:4321", { primary: "main", wildcard: "example.com" }), "main");

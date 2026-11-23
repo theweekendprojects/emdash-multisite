@@ -72,7 +72,7 @@ const grid = (min: number) => ({ display: "grid", gridTemplateColumns: `repeat(a
 const muted = { opacity: 0.65, fontSize: 14, margin: 0 } as const;
 /** Display label for a plan name; null (no subscription) reads as "Free". */
 const planLabel = (plan: string | null): string => (plan ? plan.charAt(0).toUpperCase() + plan.slice(1) : txt("account.plan.free"));
-const linkBtn = (variant: string) => buttonVariants({ variant });
+const linkBtn = (variant: "primary" | "secondary") => buttonVariants({ variant });
 
 async function api(url: string, init: RequestInit = {}) {
 	const res = await fetch(url, { credentials: "same-origin", ...init, headers: { accept: "application/json", ...(init.headers as Record<string, string>) } });
