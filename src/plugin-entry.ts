@@ -96,7 +96,7 @@ export function createPlugin() {
 	return definePlugin({
 		id: PLUGIN_ID,
 		version: PLUGIN_VERSION,
-		capabilities: ["read:content"],
+		capabilities: ["read:content", "bylines:read"],
 		// Anything that changes a public page drops this site's cached pages (purge by `site:<slug>`, see edge-cache.ts).
 		// Draft autosaves of a published entry only stage a draft revision (`draftRevisionId` set), so they must NOT purge: the
 		// purge budget is tiny and shared by every tenant. Edits to menus, widgets, settings, taxonomies and so on have no hook;
