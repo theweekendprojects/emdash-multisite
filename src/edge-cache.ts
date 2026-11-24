@@ -90,7 +90,11 @@ const ALWAYS_EDIT: RegExp[] = [
 ];
 const MEDIA_EDIT = /^media\/[^/]+(?:\/replace)?$/; // PUT/PATCH/DELETE only: new uploads change nothing public until used
 
-export type EditKind = "always" | "content-put" | "content-create";
+// `plugin-admin`: a write to a plugin's private admin route (POST /plugins/<id>/admin). A plugin's settings can change
+// public output (the privacy plugin puts its banner config in the cached HTML), and only an authorized user reaches it:
+// a visitor gets 401, which is not a 2xx, so it cannot burn the purge budget. Whether it changes anything is decided by
+// the body (touchesPublicPage). Read-only page loads are excluded there.
+export type EditKind = "always" | "content-put" | "content-create" | "plugin-admin";
 /** Does this request look like an admin write that can change a public page? `content-*` kinds need the body (see touchesPublicPage). */
 export function classifyEdit(method: string, pathname: string): EditKind | null {
 	if (method === "GET" || method === "HEAD" || method === "OPTIONS" || !pathname.startsWith(EDIT_API)) return null;
@@ -99,6 +103,7 @@ export function classifyEdit(method: string, pathname: string): EditKind | null 
 	if (method !== "POST" && MEDIA_EDIT.test(rest)) return "always";
 	if ((method === "PUT" || method === "PATCH") && /^content\/[^/]+\/[^/]+$/.test(rest)) return "content-put";
 	if (method === "POST" && /^content\/[^/]+$/.test(rest)) return "content-create";
+	if (method === "POST" && /^plugins\/[^/]+\/admin$/.test(rest)) return "plugin-admin";
 	return null;
 }
 
@@ -109,6 +114,7 @@ const DRAFT_ONLY_KEYS = new Set(["data", "slug", "locale", "skipRevision", "refe
 export function touchesPublicPage(kind: EditKind, body: unknown): boolean {
 	if (kind === "always") return true;
 	if (typeof body !== "object" || body === null) return false;
+	if (kind === "plugin-admin") return (body as { type?: unknown }).type !== undefined && (body as { type?: unknown }).type !== "page_load";
 	const b = body as Record<string, unknown>;
 	if (kind === "content-create") return b.status === "published";
 	return Object.entries(b).some(([k, v]) => v !== undefined && !DRAFT_ONLY_KEYS.has(k));

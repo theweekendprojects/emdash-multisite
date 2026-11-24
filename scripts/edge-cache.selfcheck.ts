@@ -82,7 +82,15 @@ eq("edit: revision restore", kind("POST", "revisions/r1/restore"), "always");
 eq("edit: content save needs the body", kind("PUT", "content/posts/abc"), "content-put");
 eq("edit: content create needs the body", kind("POST", "content/posts"), "content-create");
 eq("edit: GET never", kind("GET", "menus/main"), null);
-eq("edit: public plugin routes never (visitors could burn the purge budget)", [kind("POST", "plugins/emdash-privacy/save"), kind("POST", "plugins/forms/submit"), kind("POST", "plugins/seo/admin")], [null, null, null]);
+eq("edit: public plugin routes never (visitors could burn the purge budget)", [kind("POST", "plugins/emdash-privacy/save"), kind("POST", "plugins/forms/submit")], [null, null]);
+// Plugin admin routes are private (EmDash answers 401 to visitors), so only an authorized write reaches the purge.
+// A plugin's settings page can change the public page (the consent banner config is in the cached HTML).
+eq("edit: plugin admin writes are watched", kind("POST", "plugins/emdash-privacy/admin"), "plugin-admin");
+eq("edit: plugin admin GET never", kind("GET", "plugins/emdash-privacy/admin"), null);
+eq("edit: plugin admin form submit changes the public page", touchesPublicPage("plugin-admin", { type: "form_submit", action_id: "save_privacy", values: {} }), true);
+eq("edit: plugin admin block action counts", touchesPublicPage("plugin-admin", { type: "block_action", action_id: "purge_now" }), true);
+eq("edit: plugin admin page load does not (read only)", touchesPublicPage("plugin-admin", { type: "page_load" }), false);
+eq("edit: plugin admin unreadable body does not", touchesPublicPage("plugin-admin", null), false);
 eq("edit: other paths never", [classifyEdit("POST", "/api/auth/sign-in"), classifyEdit("POST", "/contact")], [null, null]);
 eq("edit: autosave body is not a public change", touchesPublicPage("content-put", { data: { title: "x" }, slug: "x", skipRevision: true, _rev: "1", references: {} }), false);
 eq("edit: undefined live keys do not count", touchesPublicPage("content-put", { data: {}, bylines: undefined }), false);
