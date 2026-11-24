@@ -8,6 +8,10 @@ contain breaking changes).
 ## [Unreleased]
 
 ### Fixed
+- **Saving a plugin's settings did not refresh the cached public pages.** The edge-cache watcher knew the core admin
+  settings routes but not plugin ones, so a settings change (for example the privacy plugin's banner config, which is
+  in the cached HTML) could stay stale for up to an hour. Writes to a plugin's private admin route now purge the site.
+  Page loads do not. Public plugin routes are still deliberately not watched.
 - **Byline cache purges ran on EmDash 1.6.** The plugin declared `byline:afterSave` and `byline:afterDelete` without the `bylines:read` capability, so core skipped both hooks and byline edits did not purge cached pages. The capability is now declared.
 
 ## [0.8.2] - 2026-11-23
