@@ -7,6 +7,8 @@ contain breaking changes).
 
 ## [Unreleased]
 
+## [0.8.3] - 2026-11-25
+
 ### Fixed
 - **Saving a plugin's settings did not refresh the cached public pages.** The edge-cache watcher knew the core admin
   settings routes but not plugin ones, so a settings change (for example the privacy plugin's banner config, which is
@@ -99,6 +101,8 @@ First open-source release (MIT), published to npm as `emdash-multisite`.
   media-usage activation completes on every tenant (previously failed on non-primary sites).
 - The "My sites" account tab shows a tenant notice instead of bouncing on a tenant host.
 
-[Unreleased]: https://github.com/theweekendprojects/emdash-multisite/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/theweekendprojects/emdash-multisite/compare/v0.8.3...HEAD
+[0.8.3]: https://github.com/theweekendprojects/emdash-multisite/compare/v0.8.2...v0.8.3
+[0.8.2]: https://github.com/theweekendprojects/emdash-multisite/compare/v0.8.1...v0.8.2
 [0.8.0]: https://github.com/theweekendprojects/emdash-multisite/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/theweekendprojects/emdash-multisite/releases/tag/v0.7.0
